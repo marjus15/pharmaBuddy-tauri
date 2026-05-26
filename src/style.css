@@ -1,0 +1,752 @@
+/* pharmaBuddy Tauri — HudRadarOrb CSS port */
+
+:root {
+  --navy: #0a1118;
+  --cyan: #00e8ff;
+  --cyan-bright: #00f0ff;
+  --cyan-dim: #00a8d8;
+
+  --glow-outer-center: rgba(0, 232, 255, 0.53);
+  --glow-inner-center: rgba(0, 240, 255, 0.67);
+  --core-mid: #00f0ff;
+  --core-edge: rgba(0, 168, 216, 0.4);
+
+  --ring-speed-a: 12s;
+  --ring-speed-b: 16s;
+  --ring-speed-hud: 22s;
+  --pulse-scale: 1.03;
+  --pulse-duration: 2s;
+
+  --flash-center: rgba(0, 255, 102, 0.67);
+  --flash-edge: rgba(0, 255, 102, 0);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#scan-fallback {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 8px 12px 12px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.main-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 340px;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/* ── Response panel ── */
+.response-panel {
+  width: 100%;
+  max-width: 316px;
+  background: rgba(10, 17, 24, 0.9);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  border-radius: 12px;
+  padding: 14px 12px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+
+.response-panel.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.response-panel.hidden {
+  display: none;
+}
+
+.response-panel.error-border {
+  border-color: rgba(255, 107, 126, 0.5);
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drag-handle {
+  font-size: 14px;
+  color: rgba(0, 212, 255, 0.33);
+  cursor: grab;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6bffb6;
+  flex-shrink: 0;
+}
+
+.response-panel.error-border .status-dot {
+  background: #ff6b7e;
+}
+
+.status-message {
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(0, 212, 255, 0.53);
+}
+
+.product-name {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #f4faff;
+  line-height: 1.3;
+}
+
+.panel-divider {
+  height: 1px;
+  background: rgba(0, 212, 255, 0.25);
+  margin-bottom: 8px;
+}
+
+.recommendation-scroll {
+  max-height: 140px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 232, 255, 0.65) rgba(10, 17, 24, 0.55);
+}
+
+.recommendation-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.recommendation-scroll::-webkit-scrollbar-track {
+  background: rgba(10, 17, 24, 0.65);
+  border-radius: 999px;
+  border: 1px solid rgba(0, 212, 255, 0.12);
+}
+
+.recommendation-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 240, 255, 0.95) 0%,
+    rgba(0, 168, 216, 0.75) 100%
+  );
+  box-shadow: 0 0 6px rgba(0, 232, 255, 0.45);
+}
+
+.recommendation-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    rgba(120, 255, 255, 1) 0%,
+    rgba(0, 220, 255, 0.9) 100%
+  );
+}
+
+.recommendation-scroll::-webkit-scrollbar-thumb:active {
+  background: rgba(0, 255, 255, 1);
+}
+
+.recommendation-scroll::-webkit-scrollbar-button,
+.recommendation-scroll::-webkit-scrollbar-corner {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.recommendation-text {
+  margin: 0;
+  padding-right: 2px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #d0e0f0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.barcode-display {
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  color: rgba(0, 168, 204, 0.33);
+}
+
+.copy-btn,
+.close-btn {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.close-btn {
+  background: rgba(0, 212, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.copy-btn {
+  background: rgba(0, 212, 255, 0.15);
+  color: #00e8ff;
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.copy-btn:hover,
+.close-btn:hover {
+  filter: brightness(1.15);
+}
+
+/* ── Orb dock ── */
+.orb-dock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+}
+
+.orb-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.orb-chrome {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  pointer-events: auto;
+}
+
+.orb-chrome-btn {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 4px;
+  background: rgba(10, 17, 24, 0.75);
+  color: rgba(0, 232, 255, 0.85);
+  font-family: Consolas, "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.orb-chrome-btn:hover {
+  background: rgba(0, 212, 255, 0.2);
+  border-color: rgba(0, 232, 255, 0.6);
+  color: #00f0ff;
+}
+
+.orb-chrome-btn-close:hover {
+  background: rgba(255, 80, 100, 0.25);
+  border-color: rgba(255, 107, 126, 0.65);
+  color: #ff8a9a;
+}
+
+.orb-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.orb-label {
+  margin: 0;
+  padding: 0;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  color: var(--cyan);
+  text-shadow: 0 0 12px rgba(0, 232, 255, 0.6);
+}
+
+.profile-badge {
+  margin: 0;
+  padding: 3px 12px;
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 216, 255, 0.35);
+  background: rgba(10, 17, 24, 0.6);
+  color: rgba(0, 216, 255, 0.53);
+  cursor: pointer;
+}
+
+.profile-badge.prod {
+  color: rgba(255, 184, 77, 0.8);
+  border-color: rgba(255, 184, 77, 0.35);
+}
+
+/* ── Orb (scaled via --orb-size; design coords were 200px) ── */
+.orb {
+  --orb-size: 160px;
+  width: var(--orb-size);
+  height: var(--orb-size);
+  cursor: grab;
+}
+
+.orb:active {
+  cursor: grabbing;
+}
+
+.radar-host {
+  position: relative;
+  width: var(--orb-size);
+  height: var(--orb-size);
+  transform-origin: center center;
+  animation: orb-breathe var(--pulse-duration) ease-in-out infinite alternate;
+  pointer-events: none;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+@keyframes orb-breathe {
+  to {
+    transform: scale(var(--pulse-scale));
+  }
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  pointer-events: none;
+}
+
+/* Vignette — soft depth only, no visible square edge */
+.vignette {
+  width: var(--orb-size);
+  height: var(--orb-size);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(10, 17, 24, 0.55) 0%,
+    rgba(10, 17, 24, 0.2) 55%,
+    transparent 72%
+  );
+  opacity: 0.85;
+}
+
+/* Circuits */
+.circuits {
+  width: var(--orb-size);
+  height: var(--orb-size);
+  opacity: 0.45;
+}
+
+.circuits line,
+.circuits rect,
+.circuits path {
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.circuits line:nth-child(odd),
+.circuits path:nth-of-type(odd) {
+  stroke: rgba(0, 184, 216, 0.13);
+}
+
+.circuits line:nth-child(even) {
+  stroke: rgba(0, 168, 200, 0.09);
+}
+
+.circuits rect {
+  stroke: rgba(0, 200, 232, 0.12);
+}
+
+/* Outer glow */
+.outer-glow {
+  width: calc(var(--orb-size) * 0.98);
+  height: calc(var(--orb-size) * 0.98);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--glow-outer-center) 0%,
+    transparent 100%
+  );
+  opacity: 0.35;
+  animation: glow-pulse var(--pulse-duration) ease-in-out infinite alternate;
+}
+
+.inner-glow {
+  width: calc(var(--orb-size) * 0.59);
+  height: calc(var(--orb-size) * 0.59);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--glow-inner-center) 0%,
+    transparent 100%
+  );
+  opacity: 0.5;
+  animation: glow-pulse-inner var(--pulse-duration) ease-in-out infinite alternate;
+}
+
+@keyframes glow-pulse {
+  to {
+    opacity: 0.5;
+  }
+}
+
+@keyframes glow-pulse-inner {
+  to {
+    opacity: 0.55;
+  }
+}
+
+/* Rings */
+.rings-assembly {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  border-style: dashed;
+  border-color: rgba(0, 232, 255, 0.8);
+  pointer-events: none;
+}
+
+.ring-hud {
+  width: calc(var(--orb-size) * 0.95);
+  height: calc(var(--orb-size) * 0.95);
+  border-width: 1px;
+  border-color: rgba(0, 212, 255, 0.33);
+  stroke-dasharray: 2 10;
+  opacity: 0.28;
+  animation: spin var(--ring-speed-hud) linear infinite;
+}
+
+.ring-a {
+  width: calc(var(--orb-size) * 0.89);
+  height: calc(var(--orb-size) * 0.89);
+  border-width: 1.5px;
+  border-color: rgba(0, 232, 255, 0.8);
+  border-style: dashed;
+  border-image: none;
+  opacity: 0.42;
+  animation: spin var(--ring-speed-a) linear infinite,
+    ring-opacity-pulse 2.5s ease-in-out infinite alternate;
+}
+
+.ring-b {
+  width: calc(var(--orb-size) * 0.76);
+  height: calc(var(--orb-size) * 0.76);
+  border-width: 1px;
+  border-color: rgba(0, 216, 255, 0.6);
+  opacity: 0.32;
+  animation: spin-reverse var(--ring-speed-b) linear infinite,
+    ring-opacity-pulse 2.5s ease-in-out infinite alternate;
+}
+
+.ring-static-128 {
+  width: calc(var(--orb-size) * 0.64);
+  height: calc(var(--orb-size) * 0.64);
+  border-width: 1px;
+  border-color: rgba(0, 200, 232, 0.4);
+  opacity: 0.22;
+}
+
+.ring-static-108 {
+  width: calc(var(--orb-size) * 0.54);
+  height: calc(var(--orb-size) * 0.54);
+  border-width: 1.25px;
+  border-style: solid;
+  border-color: rgba(0, 240, 255, 0.73);
+  opacity: 0.38;
+}
+
+.arc {
+  position: absolute;
+  width: var(--orb-size);
+  height: var(--orb-size);
+  fill: none;
+  pointer-events: none;
+}
+
+.arc-a path {
+  stroke: rgba(0, 232, 255, 0.87);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.5;
+  animation: arc-pulse 1.8s ease-in-out infinite alternate;
+}
+
+.arc-b path {
+  stroke: rgba(0, 216, 255, 0.53);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.28;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes ring-opacity-pulse {
+  to {
+    opacity: 0.55;
+  }
+}
+
+@keyframes arc-pulse {
+  to {
+    opacity: 0.7;
+  }
+}
+
+/* Core */
+.core {
+  width: calc(var(--orb-size) * 0.28);
+  height: calc(var(--orb-size) * 0.28);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 45% 40%,
+    #ffffff 0%,
+    var(--core-mid) 35%,
+    var(--core-edge) 100%
+  );
+  opacity: 0.95;
+  animation: core-pulse var(--pulse-duration) ease-in-out infinite alternate;
+}
+
+@keyframes core-pulse {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Scan lines */
+.scan-glow {
+  width: calc(var(--orb-size) * 0.74);
+  height: calc(var(--orb-size) * 0.05);
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 5px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 232, 255, 0.53),
+    transparent
+  );
+  opacity: 0.55;
+  animation: scan-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.scan-line {
+  width: calc(var(--orb-size) * 0.66);
+  height: calc(var(--orb-size) * 0.0125);
+  min-height: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #00ffff,
+    transparent
+  );
+  opacity: 0.95;
+  animation: scan-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes scan-pulse {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Glass dome — no border-image (it draws a square frame on circles) */
+.glass {
+  width: calc(var(--orb-size) * 0.94);
+  height: calc(var(--orb-size) * 0.94);
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.33) 0%,
+    rgba(255, 255, 255, 0.09) 22%,
+    transparent 45%
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Flash overlay */
+.flash-overlay {
+  width: var(--orb-size);
+  height: var(--orb-size);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--flash-center) 0%,
+    var(--flash-edge) 100%
+  );
+  opacity: 0;
+}
+
+.orb.flash-active .flash-overlay {
+  animation: orb-flash 0.24s ease-in-out forwards;
+}
+
+@keyframes orb-flash {
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── State: Idle (default cyan) ── */
+.orb.state-idle {
+  --ring-speed-a: 12s;
+  --ring-speed-b: 16s;
+  --ring-speed-hud: 22s;
+  --pulse-scale: 1.03;
+  --pulse-duration: 2s;
+}
+
+/* ── State: Thinking (purple/magenta, fast) ── */
+.orb.state-thinking {
+  --glow-outer-center: rgba(200, 77, 255, 0.75);
+  --glow-inner-center: rgba(255, 61, 206, 0.8);
+  --core-mid: #e070ff;
+  --core-edge: rgba(155, 89, 255, 0.65);
+  --ring-speed-a: 1.1s;
+  --ring-speed-b: 1.4s;
+  --ring-speed-hud: 2s;
+  --pulse-scale: 1.1;
+  --pulse-duration: 0.4s;
+}
+
+.orb.state-thinking .outer-glow {
+  opacity: 0.85;
+}
+
+.orb.state-thinking .inner-glow {
+  opacity: 0.95;
+}
+
+.orb.state-thinking .ring-a {
+  opacity: 0.95;
+  animation-duration: var(--ring-speed-a), 0.35s;
+}
+
+.orb.state-thinking .ring-b {
+  opacity: 0.82;
+}
+
+.orb.state-thinking .ring-hud {
+  opacity: 0.75;
+}
+
+.orb-dock:has(.state-thinking) .orb-label {
+  color: #c84dff;
+  text-shadow: 0 0 14px rgba(200, 77, 255, 0.7);
+}
+
+/* ── State: Success flash ── */
+.orb.state-success {
+  --flash-center: rgba(0, 255, 102, 0.75);
+  --flash-edge: rgba(0, 255, 102, 0);
+}
+
+/* ── State: Error flash ── */
+.orb.state-error {
+  --flash-center: rgba(255, 42, 42, 0.8);
+  --flash-edge: rgba(255, 42, 42, 0);
+}
+
+.orb.state-success,
+.orb.state-error {
+  --ring-speed-a: 1.1s;
+  --ring-speed-b: 1.4s;
+  --pulse-duration: 0.4s;
+}

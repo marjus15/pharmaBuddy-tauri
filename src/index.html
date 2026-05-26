@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="el">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pharmaBuddy</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="./main.js" defer></script>
+  </head>
+  <body>
+    <input
+      id="scan-fallback"
+      type="text"
+      autocomplete="off"
+      aria-hidden="true"
+      tabindex="-1"
+    />
+
+    <div id="app-root" class="app-root">
+      <div id="main-layout" class="main-layout">
+        <!-- Glass recommendation panel -->
+        <div
+          id="response-panel"
+          class="response-panel hidden"
+          data-drag-region
+        >
+          <div class="panel-header" data-drag-region>
+            <div class="panel-header-left" data-drag-region>
+              <span class="drag-handle" title="Σύρετε για μετακίνηση">⠿</span>
+              <span class="status-dot"></span>
+              <span id="status-message" class="status-message">Ολοκληρώθηκε</span>
+            </div>
+            <button
+              id="close-panel-btn"
+              class="close-btn"
+              type="button"
+              title="Απόκρυψη κάρτας"
+            >
+              ✕
+            </button>
+          </div>
+
+          <h2 id="product-name" class="product-name"></h2>
+          <div class="panel-divider"></div>
+
+          <div id="recommendation-scroll" class="recommendation-scroll">
+            <p id="recommendation-text" class="recommendation-text"></p>
+          </div>
+
+          <div class="panel-footer">
+            <span id="barcode-display" class="barcode-display"></span>
+            <button id="copy-btn" class="copy-btn" type="button">Αντιγραφή</button>
+          </div>
+        </div>
+
+        <!-- Orb dock -->
+        <div class="orb-dock">
+          <div class="orb-shell">
+            <div class="orb-chrome">
+              <button
+                type="button"
+                id="orb-minimize-btn"
+                class="orb-chrome-btn"
+                title="Ελαχιστοποίηση"
+                aria-label="Ελαχιστοποίηση"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                id="orb-close-btn"
+                class="orb-chrome-btn orb-chrome-btn-close"
+                title="Κλείσιμο"
+                aria-label="Κλείσιμο"
+              >
+                ×
+              </button>
+            </div>
+            <div
+              id="orb"
+              class="orb state-idle"
+              data-drag-region
+              role="img"
+              aria-label="AI Signal Orb"
+            >
+            <div class="radar-host">
+              <div class="layer vignette"></div>
+
+              <svg class="layer circuits" viewBox="0 0 200 200" aria-hidden="true">
+                <line x1="18" y1="42" x2="72" y2="58" />
+                <line x1="72" y1="58" x2="98" y2="38" />
+                <line x1="128" y1="34" x2="168" y2="52" />
+                <line x1="168" y1="52" x2="182" y2="88" />
+                <line x1="182" y1="88" x2="156" y2="112" />
+                <line x1="156" y1="112" x2="178" y2="148" />
+                <line x1="42" y1="162" x2="88" y2="178" />
+                <line x1="88" y1="178" x2="118" y2="168" />
+                <line x1="24" y1="118" x2="48" y2="142" />
+                <line x1="48" y1="142" x2="38" y2="168" />
+                <path d="M 120,72 A 14,14 0 1 1 148,72" fill="none" />
+              </svg>
+
+              <div class="layer outer-glow"></div>
+
+              <div class="rings-assembly">
+                <div class="ring ring-hud"></div>
+                <div class="ring ring-a"></div>
+                <div class="ring ring-b"></div>
+                <div class="ring ring-static-128"></div>
+                <div class="ring ring-static-108"></div>
+                <svg class="arc arc-a" viewBox="0 0 200 200" aria-hidden="true">
+                  <path d="M 100,24 A 76,76 0 0 1 168,68" />
+                </svg>
+                <svg class="arc arc-b" viewBox="0 0 200 200" aria-hidden="true">
+                  <path d="M 32,132 A 76,76 0 0 1 72,176" />
+                </svg>
+              </div>
+
+              <div class="layer inner-glow"></div>
+              <div class="layer core"></div>
+              <div class="layer scan-glow"></div>
+              <div class="layer scan-line"></div>
+              <div class="layer glass"></div>
+              <div class="layer flash-overlay"></div>
+            </div>
+            </div>
+          </div>
+
+          <div class="orb-footer" data-drag-region>
+            <p id="orb-label" class="orb-label">AI SIGNAL</p>
+            <button
+              id="profile-badge"
+              class="profile-badge"
+              type="button"
+              title="Εναλλαγή TEST / PROD"
+            >
+              TEST
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
