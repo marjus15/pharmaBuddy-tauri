@@ -1,0 +1,38 @@
+name: Automated PharmaBuddy Release
+
+on:
+  push:
+    branches:
+      - main # Το pipeline θα τρέχει αυτόματα μόνο όταν κάνεις push ή merge στη main
+
+jobs:
+  build-and-deploy:
+    runs-on: windows-latest # Χρειαζόμαστε Windows runner για να βγει το .exe
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-size: "20.x"
+          cache: "npm"
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Dependencies
+        run: |
+          npm install
+
+      - name: Build Tauri Application
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__ # Θα πάρει αυτόματα το version από το tauri.conf.json
+          releaseName: "PharmaBuddy v__VERSION__"
+          releaseBody: "Automated production build from main branch."
+          releaseDraft: false
+          prerelease: false
