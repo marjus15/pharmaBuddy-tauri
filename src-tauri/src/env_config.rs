@@ -34,6 +34,11 @@ pub fn profile_mutex() -> &'static std::sync::Mutex<AppProfile> {
 
 pub fn initialize() {
     load_env_files();
+
+    if has_embedded_supabase_config() {
+        app_log("[Env] Using compile-time embedded Supabase config (release build)");
+    }
+
     let profile = load_profile();
     *profile_mutex().lock().unwrap() = profile;
     app_log(&format!("[Init] Profile: {:?}", profile));
@@ -68,7 +73,28 @@ pub fn get_env(key: &str) -> Option<String> {
         }
     }
 
-    None
+    embedded_env(key)
+}
+
+/// Values baked in at compile time (GitHub Actions release builds).
+fn embedded_env(key: &str) -> Option<String> {
+    let value = match key {
+        "SUPABASE_FUNCTIONS_URL" => option_env!("SUPABASE_FUNCTIONS_URL")?,
+        "SUPABASE_ANON_KEY" => option_env!("SUPABASE_ANON_KEY")?,
+        "PHARMABUDDY_PROFILE" => option_env!("PHARMABUDDY_PROFILE")?,
+        _ => return None,
+    };
+
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+pub fn has_embedded_supabase_config() -> bool {
+    embedded_env("SUPABASE_FUNCTIONS_URL").is_some() && embedded_env("SUPABASE_ANON_KEY").is_some()
 }
 
 fn load_env_files() {

@@ -130,7 +130,8 @@ async function handleError(barcode, result) {
 }
 
 async function processBarcode(rawBarcode) {
-  const barcode = rawBarcode?.trim();
+  // Strip scanner suffixes (\r, \n) and any other surrounding whitespace.
+  const barcode = String(rawBarcode ?? "").trim();
   if (processing) return;
 
   if (!barcode || barcode.length !== 13) {
