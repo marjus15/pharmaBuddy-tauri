@@ -3,7 +3,7 @@ name: Automated PharmaBuddy Release
 on:
   push:
     branches:
-      - main # Το pipeline θα τρέχει αυτόματα μόνο όταν κάνεις push ή merge στη main
+      - master # Το pipeline θα τρέχει αυτόματα μόνο όταν κάνεις push ή merge στη main
 
 jobs:
   build-and-deploy:
