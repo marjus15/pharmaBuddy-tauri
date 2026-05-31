@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-deploy:
     runs-on: windows-latest # Χρειαζόμαστε Windows runner για να βγει το .exe
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Repository
@@ -39,17 +41,44 @@ jobs:
             exit 1
           fi
 
+      - name: Read app version from tauri.conf.json
+        id: app_version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Build Tauri Application
-        uses: tauri-apps/tauri-action@v0
+        run: npm run build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Baked into the binary at compile time — no .env needed on pharmacy PCs
           SUPABASE_FUNCTIONS_URL: ${{ secrets.SUPABASE_FUNCTIONS_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           PHARMABUDDY_PROFILE: prod
+
+      - name: Rename installer to stable download name
+        shell: powershell
+        run: |
+          $nsisDir = "src-tauri/target/release/bundle/nsis"
+          $source = Get-ChildItem -Path $nsisDir -Filter "pharmaBuddy_*_x64-setup.exe" | Select-Object -First 1
+          if (-not $source) {
+            Write-Error "Versioned installer not found in $nsisDir"
+            exit 1
+          }
+          $target = Join-Path $nsisDir "pharmaBuddy_x64-setup.exe"
+          if (Test-Path $target) {
+            Remove-Item $target -Force
+          }
+          Rename-Item -Path $source.FullName -NewName "pharmaBuddy_x64-setup.exe"
+
+      - name: Create GitHub release and upload installer
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: v__VERSION__ # Θα πάρει αυτόματα το version από το tauri.conf.json
-          releaseName: "PharmaBuddy v__VERSION__"
-          releaseBody: "Production build with embedded Supabase config. Install and scan — no manual setup required."
-          releaseDraft: false
+          tag_name: v${{ steps.app_version.outputs.version }}
+          name: PharmaBuddy v${{ steps.app_version.outputs.version }}
+          body: "Production build with embedded Supabase config. Install and scan — no manual setup required."
+          draft: false
           prerelease: false
+          files: |
+            src-tauri/target/release/bundle/nsis/pharmaBuddy_x64-setup.exe
+          fail_on_unmatched_files: true

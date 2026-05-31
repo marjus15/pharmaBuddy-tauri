@@ -27,6 +27,135 @@ let currentRecommendation = "";
 let panelOpen = false;
 let processing = false;
 
+const RECOMMENDATION_TIMEOUT_MS = 12000;
+
+// Defensive defaults for keyboard-layout misreads (Greek/Latin lookalikes).
+// Keep override map editable for scanner-specific character pairs.
+const GREEK_LAYOUT_DIGIT_MAP_DEFAULT = Object.freeze({
+  c: "0",
+  C: "0",
+  o: "0",
+  O: "0",
+  "ο": "0",
+  "Ο": "0",
+  g: "6",
+  G: "6",
+  b: "8",
+  B: "8",
+  q: "1",
+  Q: "1",
+  l: "1",
+  L: "1",
+  I: "1",
+  i: "1",
+  z: "2",
+  Z: "2",
+  e: "3",
+  E: "3",
+  a: "4",
+  A: "4",
+  s: "5",
+  S: "5",
+  t: "7",
+  T: "7",
+  y: "9",
+  Y: "9",
+});
+
+const GREEK_LAYOUT_DIGIT_MAP_OVERRIDE = Object.freeze({
+  // Example:
+  // "x": "3",
+});
+
+const GREEK_LAYOUT_DIGIT_MAP = Object.freeze({
+  ...GREEK_LAYOUT_DIGIT_MAP_DEFAULT,
+  ...GREEK_LAYOUT_DIGIT_MAP_OVERRIDE,
+});
+
+function buildUiError(errorMessage, rawResponse = "") {
+  return {
+    success: false,
+    error_message: errorMessage || "Σφάλμα",
+    raw_response: rawResponse || "",
+  };
+}
+
+function sanitizeBarcodeInput(rawValue) {
+  return String(rawValue ?? "")
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim();
+}
+
+function mapGreekLayoutToDigits(value) {
+  return Array.from(value).map((char) => GREEK_LAYOUT_DIGIT_MAP[char] ?? char).join("");
+}
+
+function extractNationalCodeFromGs1(value) {
+  const compact = value.replace(/[\s()]/g, "");
+  if (compact.length <= 13 || !compact.includes("01")) return null;
+
+  let aiIndex = compact.indexOf("01");
+  while (aiIndex !== -1) {
+    const afterAi = compact.slice(aiIndex + 2);
+    const digitsOnly = afterAi.replace(/\D/g, "");
+    if (digitsOnly.length >= 14) {
+      const gtin14 = digitsOnly.slice(0, 14);
+      // National/EAN code: remove packaging indicator digit from GTIN-14.
+      return gtin14.slice(1);
+    }
+    aiIndex = compact.indexOf("01", aiIndex + 2);
+  }
+
+  return null;
+}
+
+function normalizeBarcodeInput(rawValue) {
+  const sanitized = sanitizeBarcodeInput(rawValue);
+  if (!sanitized) {
+    return {
+      ok: false,
+      barcode: "",
+      errorMessage: "Δεν λήφθηκαν δεδομένα barcode από το scanner.",
+      debugInfo: "",
+    };
+  }
+
+  const mapped = mapGreekLayoutToDigits(sanitized);
+  const gs1Barcode = extractNationalCodeFromGs1(mapped);
+  const candidate = (gs1Barcode || mapped).replace(/\D/g, "");
+
+  if (!/^\d{13}$/.test(candidate)) {
+    return {
+      ok: false,
+      barcode: candidate,
+      errorMessage: "Μη έγκυρο barcode μετά τον καθαρισμό. Απαιτούνται 13 ψηφία.",
+      debugInfo: `raw="${rawValue ?? ""}" | cleaned="${mapped}" | digits="${candidate}"`,
+    };
+  }
+
+  return {
+    ok: true,
+    barcode: candidate,
+  };
+}
+
+async function invokeRecommendationWithTimeout(barcode) {
+  let timeoutId;
+  try {
+    return await Promise.race([
+      invoke("get_recommendation", { barcode }),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error("Η αναζήτηση καθυστέρησε ή μπλοκαρίστηκε από το δίκτυο."));
+        }, RECOMMENDATION_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 function setOrbState(state) {
   ORB_STATES.forEach((s) => orb.classList.remove(s));
   orb.classList.add(`state-${state}`);
@@ -130,37 +259,37 @@ async function handleError(barcode, result) {
 }
 
 async function processBarcode(rawBarcode) {
-  // Strip scanner suffixes (\r, \n) and any other surrounding whitespace.
-  const barcode = String(rawBarcode ?? "").trim();
   if (processing) return;
 
-  if (!barcode || barcode.length !== 13) {
-    console.log(`[Scan] Rejected: length=${barcode?.length}`);
-    setOrbState("error");
-    triggerFlash();
-    setTimeout(() => setOrbState("idle"), 650);
+  const normalized = normalizeBarcodeInput(rawBarcode);
+  if (!normalized.ok) {
+    console.log("[Scan] Rejected:", normalized);
+    await handleError(normalized.barcode, buildUiError(normalized.errorMessage, normalized.debugInfo));
     return;
   }
 
+  const barcode = normalized.barcode;
   processing = true;
   console.log(`[Scan] Accepted: ${barcode}`);
 
   try {
     await setThinking();
-    const result = await invoke("get_recommendation", { barcode });
+    const result = await invokeRecommendationWithTimeout(barcode);
 
-    if (result.success) {
+    if (result?.success) {
       await handleSuccess(barcode, result);
     } else {
-      await handleError(barcode, result);
+      await handleError(
+        barcode,
+        buildUiError(
+          result?.error_message || result?.message || "Το προϊόν δεν βρέθηκε.",
+          result?.raw_response || result?.rawResponse || ""
+        )
+      );
     }
   } catch (err) {
     console.error("[Scan] Exception:", err);
-    await handleError(barcode, {
-      error_message: String(err),
-      raw_response: "",
-      success: false,
-    });
+    await handleError(barcode, buildUiError(String(err), "Ελέγξτε σύνδεση, firewall ή πρόσβαση στο Supabase."));
   } finally {
     processing = false;
   }
