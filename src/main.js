@@ -72,6 +72,14 @@ const GREEK_LAYOUT_DIGIT_MAP = Object.freeze({
   ...GREEK_LAYOUT_DIGIT_MAP_OVERRIDE,
 });
 
+const EOF_CLASSIC_BARCODE_PROMPT =
+  "Παρακαλώ σκανάρετε το κλασικό barcode του ΕΟΦ (ταινία γνησιότητας).";
+const INVALID_SCAN_FORMAT_MESSAGE =
+  "Μη έγκυρη μορφή barcode. Σκανάρετε έγκυρο ΕΟΦ barcode (13 ψηφία που ξεκινά από 280).";
+const NETWORK_ERROR_MESSAGE =
+  "Αποτυχία σύνδεσης με Supabase. Ελέγξτε δίκτυο ή firewall και δοκιμάστε ξανά.";
+const PRODUCT_NOT_FOUND_MESSAGE = "Το προϊόν δεν βρέθηκε στη βάση δεδομένων.";
+
 function buildUiError(errorMessage, rawResponse = "") {
   return {
     success: false,
@@ -91,23 +99,25 @@ function mapGreekLayoutToDigits(value) {
   return Array.from(value).map((char) => GREEK_LAYOUT_DIGIT_MAP[char] ?? char).join("");
 }
 
-function extractNationalCodeFromGs1(value) {
-  const compact = value.replace(/[\s()]/g, "");
-  if (compact.length <= 13 || !compact.includes("01")) return null;
+function looksLikeGs1DataMatrix(value) {
+  const compact = value.replace(/[\s()\u001d]/g, "");
+  return compact.length > 13 && compact.includes("01");
+}
 
+function extractGs1Gtin14(value) {
+  const compact = value.replace(/[\s()\u001d]/g, "");
   let aiIndex = compact.indexOf("01");
+
   while (aiIndex !== -1) {
     const afterAi = compact.slice(aiIndex + 2);
     const digitsOnly = afterAi.replace(/\D/g, "");
     if (digitsOnly.length >= 14) {
-      const gtin14 = digitsOnly.slice(0, 14);
-      // National/EAN code: remove packaging indicator digit from GTIN-14.
-      return gtin14.slice(1);
+      return digitsOnly.slice(0, 14);
     }
     aiIndex = compact.indexOf("01", aiIndex + 2);
   }
 
-  return null;
+  return "";
 }
 
 function normalizeBarcodeInput(rawValue) {
@@ -121,23 +131,89 @@ function normalizeBarcodeInput(rawValue) {
     };
   }
 
-  const mapped = mapGreekLayoutToDigits(sanitized);
-  const gs1Barcode = extractNationalCodeFromGs1(mapped);
-  const candidate = (gs1Barcode || mapped).replace(/\D/g, "");
+  const hasLetters = /\p{L}/u.test(sanitized);
+  const mapped = hasLetters ? mapGreekLayoutToDigits(sanitized) : sanitized;
+  const digitsOnly = mapped.replace(/\D/g, "");
 
-  if (!/^\d{13}$/.test(candidate)) {
+  if (looksLikeGs1DataMatrix(mapped)) {
+    const gtin14 = extractGs1Gtin14(mapped);
+    if (!/^\d{14}$/.test(gtin14)) {
+      return {
+        ok: false,
+        barcode: digitsOnly,
+        errorMessage: INVALID_SCAN_FORMAT_MESSAGE,
+        debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | gtin14=""`,
+      };
+    }
+
+    if (!gtin14.startsWith("0280")) {
+      return {
+        ok: false,
+        barcode: "",
+        errorMessage: EOF_CLASSIC_BARCODE_PROMPT,
+        debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | gtin14="${gtin14}"`,
+      };
+    }
+
+    const eofCode13 = gtin14.slice(1);
+    if (!/^280\d{10}$/.test(eofCode13)) {
+      return {
+        ok: false,
+        barcode: eofCode13,
+        errorMessage: INVALID_SCAN_FORMAT_MESSAGE,
+        debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | gtin14="${gtin14}"`,
+      };
+    }
+
+    return {
+      ok: true,
+      barcode: eofCode13,
+    };
+  }
+
+  if (/^280\d{10}$/.test(digitsOnly) && digitsOnly.length === 13) {
+    return {
+      ok: true,
+      barcode: digitsOnly,
+    };
+  }
+
+  if (!/^\d{13}$/.test(digitsOnly)) {
     return {
       ok: false,
-      barcode: candidate,
-      errorMessage: "Μη έγκυρο barcode μετά τον καθαρισμό. Απαιτούνται 13 ψηφία.",
-      debugInfo: `raw="${rawValue ?? ""}" | cleaned="${mapped}" | digits="${candidate}"`,
+      barcode: digitsOnly,
+      errorMessage: INVALID_SCAN_FORMAT_MESSAGE,
+      debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | digits="${digitsOnly}"`,
     };
   }
 
   return {
-    ok: true,
-    barcode: candidate,
+    ok: false,
+    barcode: digitsOnly,
+    errorMessage: INVALID_SCAN_FORMAT_MESSAGE,
+    debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | digits="${digitsOnly}"`,
   };
+}
+
+function isNetworkErrorMessage(text) {
+  const value = String(text ?? "").toLowerCase();
+  return (
+    value.includes("network") ||
+    value.includes("timeout") ||
+    value.includes("fetch") ||
+    value.includes("σφάλμα δικτύου") ||
+    value.includes("καθυστέρησε")
+  );
+}
+
+function isProductNotFoundMessage(text) {
+  const value = String(text ?? "").toLowerCase();
+  return (
+    value.includes("not found") ||
+    value.includes("δεν βρέθηκε") ||
+    value.includes("product_not_found") ||
+    value.includes("μη διαθέσιμο")
+  );
 }
 
 async function invokeRecommendationWithTimeout(barcode) {
@@ -279,17 +355,23 @@ async function processBarcode(rawBarcode) {
     if (result?.success) {
       await handleSuccess(barcode, result);
     } else {
+      const backendMessage = result?.error_message || result?.message || "";
+      const uiMessage = isProductNotFoundMessage(backendMessage)
+        ? PRODUCT_NOT_FOUND_MESSAGE
+        : backendMessage || PRODUCT_NOT_FOUND_MESSAGE;
       await handleError(
         barcode,
         buildUiError(
-          result?.error_message || result?.message || "Το προϊόν δεν βρέθηκε.",
+          uiMessage,
           result?.raw_response || result?.rawResponse || ""
         )
       );
     }
   } catch (err) {
     console.error("[Scan] Exception:", err);
-    await handleError(barcode, buildUiError(String(err), "Ελέγξτε σύνδεση, firewall ή πρόσβαση στο Supabase."));
+    const errText = String(err ?? "");
+    const message = isNetworkErrorMessage(errText) ? NETWORK_ERROR_MESSAGE : errText || NETWORK_ERROR_MESSAGE;
+    await handleError(barcode, buildUiError(message, "Ελέγξτε σύνδεση, firewall ή πρόσβαση στο Supabase."));
   } finally {
     processing = false;
   }
