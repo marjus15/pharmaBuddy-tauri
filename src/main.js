@@ -6,6 +6,7 @@ const WINDOW = getCurrentWindow();
 
 const SIZES = {
   collapsed: { width: 250, height: 245 },
+  preview: { width: 368, height: 340 },
   success: { width: 368, height: 520 },
   error: { width: 368, height: 400 },
 };
@@ -15,6 +16,13 @@ const ORB_STATES = ["state-idle", "state-thinking", "state-success", "state-erro
 const $ = (id) => document.getElementById(id);
 
 const orb = $("orb");
+const previewPanel = $("preview-panel");
+const previewStatus = $("preview-status");
+const previewProductName = $("preview-product-name");
+const previewBarcode = $("preview-barcode");
+const manualNameInput = $("manual-name-input");
+const recommendBtn = $("recommend-btn");
+
 const responsePanel = $("response-panel");
 const statusMessage = $("status-message");
 const productName = $("product-name");
@@ -25,57 +33,32 @@ const scanFallback = $("scan-fallback");
 
 let currentRecommendation = "";
 let panelOpen = false;
+let previewOpen = false;
 let processing = false;
 
-const RECOMMENDATION_TIMEOUT_MS = 12000;
+let pendingLookup = null;
+
+const RECOMMENDATION_TIMEOUT_MS = 35000;
 
 // Defensive defaults for keyboard-layout misreads (Greek/Latin lookalikes).
-// Keep override map editable for scanner-specific character pairs.
 const GREEK_LAYOUT_DIGIT_MAP_DEFAULT = Object.freeze({
-  c: "0",
-  C: "0",
-  o: "0",
-  O: "0",
-  "ο": "0",
-  "Ο": "0",
-  g: "6",
-  G: "6",
-  b: "8",
-  B: "8",
-  q: "1",
-  Q: "1",
-  l: "1",
-  L: "1",
-  I: "1",
-  i: "1",
-  z: "2",
-  Z: "2",
-  e: "3",
-  E: "3",
-  a: "4",
-  A: "4",
-  s: "5",
-  S: "5",
-  t: "7",
-  T: "7",
-  y: "9",
-  Y: "9",
+  c: "0", C: "0", o: "0", O: "0", "ο": "0", "Ο": "0",
+  g: "6", G: "6", b: "8", B: "8",
+  q: "1", Q: "1", l: "1", L: "1", I: "1", i: "1",
+  z: "2", Z: "2", e: "3", E: "3",
+  a: "4", A: "4", s: "5", S: "5",
+  t: "7", T: "7", y: "9", Y: "9",
 });
 
-const GREEK_LAYOUT_DIGIT_MAP_OVERRIDE = Object.freeze({
-  // Example:
-  // "x": "3",
-});
+const GREEK_LAYOUT_DIGIT_MAP_OVERRIDE = Object.freeze({});
 
 const GREEK_LAYOUT_DIGIT_MAP = Object.freeze({
   ...GREEK_LAYOUT_DIGIT_MAP_DEFAULT,
   ...GREEK_LAYOUT_DIGIT_MAP_OVERRIDE,
 });
 
-const EOF_CLASSIC_BARCODE_PROMPT =
-  "Παρακαλώ σκανάρετε το κλασικό barcode του ΕΟΦ (ταινία γνησιότητας).";
 const INVALID_SCAN_FORMAT_MESSAGE =
-  "Μη έγκυρη μορφή barcode. Σκανάρετε έγκυρο ΕΟΦ barcode (13 ψηφία που ξεκινά από 280).";
+  "Μη έγκυρη μορφή barcode.";
 const NETWORK_ERROR_MESSAGE =
   "Αποτυχία σύνδεσης με Supabase. Ελέγξτε δίκτυο ή firewall και δοκιμάστε ξανά.";
 const PRODUCT_NOT_FOUND_MESSAGE = "Το προϊόν δεν βρέθηκε στη βάση δεδομένων.";
@@ -123,12 +106,7 @@ function extractGs1Gtin14(value) {
 function normalizeBarcodeInput(rawValue) {
   const sanitized = sanitizeBarcodeInput(rawValue);
   if (!sanitized) {
-    return {
-      ok: false,
-      barcode: "",
-      errorMessage: "Δεν λήφθηκαν δεδομένα barcode από το scanner.",
-      debugInfo: "",
-    };
+    return { ok: false, barcode: "", errorMessage: "Δεν λήφθηκαν δεδομένα barcode από το scanner.", debugInfo: "" };
   }
 
   const hasLetters = /\p{L}/u.test(sanitized);
@@ -138,98 +116,34 @@ function normalizeBarcodeInput(rawValue) {
   if (looksLikeGs1DataMatrix(mapped)) {
     const gtin14 = extractGs1Gtin14(mapped);
     if (!/^\d{14}$/.test(gtin14)) {
-      return {
-        ok: false,
-        barcode: digitsOnly,
-        errorMessage: INVALID_SCAN_FORMAT_MESSAGE,
-        debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | gtin14=""`,
-      };
+      return { ok: false, barcode: digitsOnly, errorMessage: INVALID_SCAN_FORMAT_MESSAGE, debugInfo: `gtin14 extraction failed` };
     }
-
-    if (!gtin14.startsWith("0280")) {
-      return {
-        ok: false,
-        barcode: "",
-        errorMessage: EOF_CLASSIC_BARCODE_PROMPT,
-        debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | gtin14="${gtin14}"`,
-      };
+    if (gtin14.startsWith("0280")) {
+      const eofCode13 = gtin14.slice(1);
+      if (/^280\d{10}$/.test(eofCode13)) {
+        return { ok: true, barcode: eofCode13 };
+      }
     }
-
-    const eofCode13 = gtin14.slice(1);
-    if (!/^280\d{10}$/.test(eofCode13)) {
-      return {
-        ok: false,
-        barcode: eofCode13,
-        errorMessage: INVALID_SCAN_FORMAT_MESSAGE,
-        debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | gtin14="${gtin14}"`,
-      };
-    }
-
-    return {
-      ok: true,
-      barcode: eofCode13,
-    };
+    const internationalCode = gtin14.startsWith("0") ? gtin14.slice(1) : gtin14;
+    console.log(`[Scan] GS1 international GTIN: ${internationalCode}`);
+    return { ok: true, barcode: internationalCode };
   }
 
-  if (/^280\d{10}$/.test(digitsOnly) && digitsOnly.length === 13) {
-    return {
-      ok: true,
-      barcode: digitsOnly,
-    };
+  if (/^\d{13}$/.test(digitsOnly)) {
+    return { ok: true, barcode: digitsOnly };
   }
 
-  if (!/^\d{13}$/.test(digitsOnly)) {
-    return {
-      ok: false,
-      barcode: digitsOnly,
-      errorMessage: INVALID_SCAN_FORMAT_MESSAGE,
-      debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | digits="${digitsOnly}"`,
-    };
+  if (!/^\d+$/.test(digitsOnly) || digitsOnly.length < 8) {
+    return { ok: false, barcode: digitsOnly, errorMessage: INVALID_SCAN_FORMAT_MESSAGE, debugInfo: `digits=${digitsOnly.length}` };
   }
 
-  return {
-    ok: false,
-    barcode: digitsOnly,
-    errorMessage: INVALID_SCAN_FORMAT_MESSAGE,
-    debugInfo: `raw="${rawValue ?? ""}" | mapped="${mapped}" | digits="${digitsOnly}"`,
-  };
+  return { ok: true, barcode: digitsOnly };
 }
 
 function isNetworkErrorMessage(text) {
   const value = String(text ?? "").toLowerCase();
-  return (
-    value.includes("network") ||
-    value.includes("timeout") ||
-    value.includes("fetch") ||
-    value.includes("σφάλμα δικτύου") ||
-    value.includes("καθυστέρησε")
-  );
-}
-
-function isProductNotFoundMessage(text) {
-  const value = String(text ?? "").toLowerCase();
-  return (
-    value.includes("not found") ||
-    value.includes("δεν βρέθηκε") ||
-    value.includes("product_not_found") ||
-    value.includes("μη διαθέσιμο")
-  );
-}
-
-async function invokeRecommendationWithTimeout(barcode) {
-  let timeoutId;
-  try {
-    return await Promise.race([
-      invoke("get_recommendation", { barcode }),
-      new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(new Error("Η αναζήτηση καθυστέρησε ή μπλοκαρίστηκε από το δίκτυο."));
-        }, RECOMMENDATION_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
+  return value.includes("network") || value.includes("timeout") || value.includes("fetch") ||
+    value.includes("σφάλμα δικτύου") || value.includes("καθυστέρησε");
 }
 
 function setOrbState(state) {
@@ -241,11 +155,7 @@ function triggerFlash() {
   orb.classList.remove("flash-active");
   void orb.offsetWidth;
   orb.classList.add("flash-active");
-  orb.addEventListener(
-    "animationend",
-    () => orb.classList.remove("flash-active"),
-    { once: true }
-  );
+  orb.addEventListener("animationend", () => orb.classList.remove("flash-active"), { once: true });
 }
 
 async function resizeWindow(sizeKey) {
@@ -266,7 +176,64 @@ async function writeClipboard(text) {
   }
 }
 
+// ── Step 1: Preview panel (show product name or manual input) ──
+
+async function showPreview(lookupResult, barcode) {
+  responsePanel.classList.remove("visible");
+  responsePanel.classList.add("hidden");
+  panelOpen = false;
+
+  previewPanel.classList.remove("hidden", "error-border", "visible");
+  void previewPanel.offsetWidth;
+
+  if (lookupResult.found) {
+    previewStatus.textContent = "Βρέθηκε";
+    previewProductName.textContent = lookupResult.product_name || "";
+    previewProductName.classList.remove("hidden");
+    manualNameInput.classList.add("hidden");
+    manualNameInput.value = "";
+  } else {
+    previewStatus.textContent = "Δεν βρέθηκε — πληκτρολογήστε όνομα";
+    previewProductName.textContent = "";
+    previewProductName.classList.add("hidden");
+    manualNameInput.classList.remove("hidden");
+    manualNameInput.value = "";
+    setTimeout(() => manualNameInput.focus(), 100);
+  }
+
+  previewBarcode.textContent = barcode;
+  previewPanel.classList.add("visible");
+  previewOpen = true;
+
+  pendingLookup = {
+    barcode,
+    found: lookupResult.found,
+    productName: lookupResult.product_name || "",
+    activeIngredient: lookupResult.active_ingredient || "",
+    atcCode: lookupResult.atc_code || "",
+  };
+
+  await resizeWindow("preview");
+  setOrbState(lookupResult.found ? "success" : "idle");
+  triggerFlash();
+  setTimeout(() => setOrbState("idle"), 400);
+}
+
+async function collapsePreview() {
+  previewPanel.classList.remove("visible");
+  previewPanel.classList.add("hidden");
+  previewOpen = false;
+  pendingLookup = null;
+  await resizeWindow("collapsed");
+}
+
+// ── Step 2: Recommendation panel ──
+
 async function showPanel(mode, data) {
+  previewPanel.classList.remove("visible");
+  previewPanel.classList.add("hidden");
+  previewOpen = false;
+
   responsePanel.classList.remove("hidden", "error-border", "visible");
   void responsePanel.offsetWidth;
   responsePanel.classList.add("visible");
@@ -279,8 +246,7 @@ async function showPanel(mode, data) {
   } else {
     responsePanel.classList.remove("error-border");
     const profile = await invoke("get_profile");
-    statusMessage.textContent =
-      profile === "TEST" ? "Ολοκληρώθηκε (TEST)" : "Ολοκληρώθηκε";
+    statusMessage.textContent = profile === "TEST" ? "Ολοκληρώθηκε (TEST)" : "Ολοκληρώθηκε";
     productName.textContent = data.productName || "";
     recommendationText.textContent = data.recommendation || "";
   }
@@ -294,13 +260,6 @@ async function collapsePanel() {
   responsePanel.classList.add("hidden");
   panelOpen = false;
   await resizeWindow("collapsed");
-}
-
-async function setThinking() {
-  if (panelOpen) {
-    await collapsePanel();
-  }
-  setOrbState("thinking");
 }
 
 async function handleSuccess(barcode, result) {
@@ -334,6 +293,8 @@ async function handleError(barcode, result) {
   setTimeout(() => setOrbState("idle"), 650);
 }
 
+// ── Phase 1: Scan → Lookup → Preview ──
+
 async function processBarcode(rawBarcode) {
   if (processing) return;
 
@@ -345,49 +306,96 @@ async function processBarcode(rawBarcode) {
   }
 
   const barcode = normalized.barcode;
-  processing = true;
   console.log(`[Scan] Accepted: ${barcode}`);
 
   try {
-    await setThinking();
-    const result = await invokeRecommendationWithTimeout(barcode);
+    if (previewOpen) await collapsePreview();
+    if (panelOpen) await collapsePanel();
+
+    setOrbState("thinking");
+
+    const lookupResult = await invoke("lookup_barcode", { barcode });
+    console.log("[Lookup] Result:", lookupResult);
+    await showPreview(lookupResult, barcode);
+  } catch (err) {
+    console.error("[Lookup] Exception:", err);
+    await handleError(barcode, buildUiError(String(err)));
+  }
+}
+
+// ── Phase 2: Click "Πρόταση" → AI Recommendation ──
+
+async function requestRecommendation() {
+  if (processing || !pendingLookup) return;
+
+  const { barcode, found } = pendingLookup;
+  let finalProductName = pendingLookup.productName;
+
+  if (!found) {
+    finalProductName = manualNameInput.value.trim();
+    if (!finalProductName) {
+      manualNameInput.focus();
+      return;
+    }
+  }
+
+  processing = true;
+  console.log(`[Recommend] barcode=${barcode} product_name="${finalProductName}"`);
+
+  try {
+    previewPanel.classList.remove("visible");
+    previewPanel.classList.add("hidden");
+    previewOpen = false;
+
+    setOrbState("thinking");
+    await resizeWindow("collapsed");
+
+    let timeoutId;
+    const result = await Promise.race([
+      invoke("get_recommendation", {
+        barcode,
+        productName: finalProductName || null,
+      }),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error("Η αναζήτηση καθυστέρησε ή μπλοκαρίστηκε από το δίκτυο."));
+        }, RECOMMENDATION_TIMEOUT_MS);
+      }),
+    ]);
+    if (timeoutId) clearTimeout(timeoutId);
 
     if (result?.success) {
       await handleSuccess(barcode, result);
     } else {
-      const backendMessage = result?.error_message || result?.message || "";
-      const uiMessage = isProductNotFoundMessage(backendMessage)
-        ? PRODUCT_NOT_FOUND_MESSAGE
-        : backendMessage || PRODUCT_NOT_FOUND_MESSAGE;
-      await handleError(
-        barcode,
-        buildUiError(
-          uiMessage,
-          result?.raw_response || result?.rawResponse || ""
-        )
-      );
+      const msg = result?.error_message || result?.message || PRODUCT_NOT_FOUND_MESSAGE;
+      await handleError(barcode, buildUiError(msg, result?.raw_response || ""));
     }
   } catch (err) {
-    console.error("[Scan] Exception:", err);
+    console.error("[Recommend] Exception:", err);
     const errText = String(err ?? "");
     const message = isNetworkErrorMessage(errText) ? NETWORK_ERROR_MESSAGE : errText || NETWORK_ERROR_MESSAGE;
     await handleError(barcode, buildUiError(message, "Ελέγξτε σύνδεση, firewall ή πρόσβαση στο Supabase."));
   } finally {
     processing = false;
+    pendingLookup = null;
   }
 }
+
+// ── Setup ──
 
 function setupDrag() {
   document.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
-
     const target = e.target;
     if (target.closest("#close-panel-btn")) return;
+    if (target.closest("#preview-close-btn")) return;
     if (target.closest("#copy-btn")) return;
+    if (target.closest("#recommend-btn")) return;
     if (target.closest("#profile-badge")) return;
     if (target.closest(".orb-chrome-btn")) return;
     if (target.closest("#recommendation-scroll")) return;
     if (target.closest("#scan-fallback")) return;
+    if (target.closest("#manual-name-input")) return;
 
     if (target.closest("[data-drag-region]")) {
       e.preventDefault();
@@ -402,11 +410,28 @@ function setupPanelControls() {
     collapsePanel();
   });
 
+  $("preview-close-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    collapsePreview();
+  });
+
   $("copy-btn").addEventListener("click", async (e) => {
     e.stopPropagation();
     if (!currentRecommendation) return;
     await writeClipboard(currentRecommendation);
     statusMessage.textContent = "Αντιγράφηκε στο πρόχειρο";
+  });
+
+  recommendBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    requestRecommendation();
+  });
+
+  manualNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      requestRecommendation();
+    }
   });
 }
 

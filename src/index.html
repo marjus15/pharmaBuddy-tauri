@@ -18,7 +18,46 @@
 
     <div id="app-root" class="app-root">
       <div id="main-layout" class="main-layout">
-        <!-- Glass recommendation panel -->
+
+        <!-- Step 1: Name preview panel (shown after scan / lookup) -->
+        <div
+          id="preview-panel"
+          class="response-panel hidden"
+          data-drag-region
+        >
+          <div class="panel-header" data-drag-region>
+            <div class="panel-header-left" data-drag-region>
+              <span class="drag-handle" title="Σύρετε για μετακίνηση">⠿</span>
+              <span class="status-dot"></span>
+              <span id="preview-status" class="status-message">Βρέθηκε</span>
+            </div>
+            <button
+              id="preview-close-btn"
+              class="close-btn"
+              type="button"
+              title="Απόκρυψη"
+            >
+              ✕
+            </button>
+          </div>
+
+          <h2 id="preview-product-name" class="product-name"></h2>
+
+          <input
+            id="manual-name-input"
+            class="manual-name-input hidden"
+            type="text"
+            placeholder="Πληκτρολογήστε το όνομα φαρμάκου"
+            autocomplete="off"
+          />
+
+          <div class="panel-footer">
+            <span id="preview-barcode" class="barcode-display"></span>
+            <button id="recommend-btn" class="recommend-btn" type="button">Πρόταση</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Recommendation panel (shown after AI call) -->
         <div
           id="response-panel"
           class="response-panel hidden"

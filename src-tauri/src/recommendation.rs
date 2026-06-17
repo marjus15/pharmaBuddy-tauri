@@ -12,13 +12,125 @@ pub struct RecommendationDto {
     pub raw_response: Option<String>,
 }
 
-pub async fn get_recommendation(barcode: &str) -> RecommendationDto {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LookupResult {
+    pub found: bool,
+    pub product_name: Option<String>,
+    pub active_ingredient: Option<String>,
+    pub atc_code: Option<String>,
+}
+
+pub async fn lookup_barcode(barcode: &str) -> LookupResult {
     let profile = env_config::current_profile();
-    env_config::app_log(&format!("[Scan] Lookup {barcode} (profile: {:?})", profile));
+    env_config::app_log(&format!("[Lookup] Barcode {barcode} (profile: {:?})", profile));
+
+    match profile {
+        AppProfile::Test => lookup_barcode_test(barcode),
+        AppProfile::Prod => lookup_barcode_prod(barcode).await,
+    }
+}
+
+fn lookup_barcode_test(barcode: &str) -> LookupResult {
+    if barcode == "0000000000000" {
+        return LookupResult {
+            found: false,
+            product_name: None,
+            active_ingredient: None,
+            atc_code: None,
+        };
+    }
+    if barcode == "1111111111111" {
+        return LookupResult {
+            found: true,
+            product_name: Some("Panadol Extra 500mg (TEST)".into()),
+            active_ingredient: Some("Paracetamol / Caffeine".into()),
+            atc_code: Some("N02BE51".into()),
+        };
+    }
+    let suffix = if barcode.len() >= 4 { &barcode[barcode.len() - 4..] } else { barcode };
+    LookupResult {
+        found: true,
+        product_name: Some(format!("Δοκιμαστικό Προϊόν #{suffix}")),
+        active_ingredient: Some("Test Ingredient".into()),
+        atc_code: Some("N/A".into()),
+    }
+}
+
+async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
+    let functions_url = match env_config::get_env("SUPABASE_FUNCTIONS_URL") {
+        Some(v) => v,
+        None => {
+            env_config::app_log("[Lookup] Missing SUPABASE_FUNCTIONS_URL");
+            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None };
+        }
+    };
+    let anon_key = match env_config::get_env("SUPABASE_ANON_KEY") {
+        Some(v) => v,
+        None => {
+            env_config::app_log("[Lookup] Missing SUPABASE_ANON_KEY");
+            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None };
+        }
+    };
+
+    let payload = serde_json::json!({
+        "barcode": barcode,
+        "pharmacy_id": "",
+        "lookup_only": true
+    });
+
+    env_config::app_log(&format!("[Lookup] POST → {functions_url}"));
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    let response = match client
+        .post(&functions_url)
+        .header("Authorization", format!("Bearer {anon_key}"))
+        .header("Accept", "application/json")
+        .json(&payload)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(ex) => {
+            env_config::app_log(&format!("[Lookup] Network error: {ex}"));
+            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None };
+        }
+    };
+
+    let body = response.text().await.unwrap_or_default();
+    env_config::app_log(&format!("[Lookup] Response: {body}"));
+
+    if let Ok(result) = serde_json::from_str::<LookupResult>(&body) {
+        return result;
+    }
+
+    // Fallback: parse the full recommendation response format (before Edge Function redeploy)
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) {
+        let has_product = parsed.get("product_name").and_then(|v| v.as_str()).is_some();
+        let is_success = parsed.get("success").and_then(|v| v.as_bool()) == Some(true);
+        if has_product && is_success {
+            return LookupResult {
+                found: true,
+                product_name: parsed.get("product_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                active_ingredient: None,
+                atc_code: None,
+            };
+        }
+    }
+
+    LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None }
+}
+
+pub async fn get_recommendation(barcode: &str, product_name: Option<&str>) -> RecommendationDto {
+    let profile = env_config::current_profile();
+    env_config::app_log(&format!("[Recommend] {barcode} product_name={:?} (profile: {:?})", product_name, profile));
 
     match profile {
         AppProfile::Test => get_test_recommendation(barcode).await,
-        AppProfile::Prod => get_prod_recommendation(barcode).await,
+        AppProfile::Prod => get_prod_recommendation(barcode, product_name).await,
     }
 }
 
@@ -84,7 +196,7 @@ async fn get_test_recommendation(barcode: &str) -> RecommendationDto {
     }
 }
 
-async fn get_prod_recommendation(barcode: &str) -> RecommendationDto {
+async fn get_prod_recommendation(barcode: &str, product_name: Option<&str>) -> RecommendationDto {
     let functions_url = match env_config::get_env("SUPABASE_FUNCTIONS_URL") {
         Some(v) => v,
         None => {
@@ -115,10 +227,13 @@ async fn get_prod_recommendation(barcode: &str) -> RecommendationDto {
         }
     };
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "barcode": barcode,
         "pharmacy_id": ""
     });
+    if let Some(name) = product_name {
+        payload["product_name"] = serde_json::Value::String(name.to_string());
+    }
 
     env_config::app_log(&format!("[Prod] POST → {functions_url}"));
     env_config::app_log(&format!("[Prod] Payload: {payload}"));

@@ -6,8 +6,13 @@ use recommendation::RecommendationDto;
 use tauri::Manager;
 
 #[tauri::command]
-async fn get_recommendation(barcode: String) -> RecommendationDto {
-    recommendation::get_recommendation(&barcode).await
+async fn get_recommendation(barcode: String, product_name: Option<String>) -> RecommendationDto {
+    recommendation::get_recommendation(&barcode, product_name.as_deref()).await
+}
+
+#[tauri::command]
+async fn lookup_barcode(barcode: String) -> recommendation::LookupResult {
+    recommendation::lookup_barcode(&barcode).await
 }
 
 #[tauri::command]
@@ -63,6 +68,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_recommendation,
+            lookup_barcode,
             get_profile,
             toggle_profile
         ])
