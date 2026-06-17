@@ -1,4 +1,9 @@
+use crate::barcode_fallback;
+use crate::catalog_cache;
+use crate::commercial_registry;
 use crate::env_config::{self, AppProfile};
+use crate::eprescription;
+use crate::galinos;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -18,6 +23,10 @@ pub struct LookupResult {
     pub product_name: Option<String>,
     pub active_ingredient: Option<String>,
     pub atc_code: Option<String>,
+    /// Where the name came from: "catalog", "galinos", or absent. Not returned by the
+    /// Edge Function, so it must default when deserializing the catalog response.
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 pub async fn lookup_barcode(barcode: &str) -> LookupResult {
@@ -37,6 +46,7 @@ fn lookup_barcode_test(barcode: &str) -> LookupResult {
             product_name: None,
             active_ingredient: None,
             atc_code: None,
+            source: None,
         };
     }
     if barcode == "1111111111111" {
@@ -45,6 +55,7 @@ fn lookup_barcode_test(barcode: &str) -> LookupResult {
             product_name: Some("Panadol Extra 500mg (TEST)".into()),
             active_ingredient: Some("Paracetamol / Caffeine".into()),
             atc_code: Some("N02BE51".into()),
+            source: Some("catalog".into()),
         };
     }
     let suffix = if barcode.len() >= 4 { &barcode[barcode.len() - 4..] } else { barcode };
@@ -53,22 +64,141 @@ fn lookup_barcode_test(barcode: &str) -> LookupResult {
         product_name: Some(format!("Δοκιμαστικό Προϊόν #{suffix}")),
         active_ingredient: Some("Test Ingredient".into()),
         atc_code: Some("N/A".into()),
+        source: Some("catalog".into()),
     }
 }
 
+/// Whether the Galinos web fallback is allowed. Defaults to ON in PROD; set
+/// `GALINOS_LOOKUP_ENABLED=false` (or 0/no/off) to disable it.
+fn galinos_lookup_enabled() -> bool {
+    match env_config::get_env("GALINOS_LOOKUP_ENABLED") {
+        Some(v) => !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"),
+        None => true,
+    }
+}
+
+/// PROD lookup: catalog → session cache → commercial registry → Galinos → OpenFoodFacts → unresolved.
 async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
+    let result = lookup_catalog_prod(barcode).await;
+    if result.found {
+        let mut hit = result;
+        if hit.source.is_none() {
+            hit.source = Some("catalog".into());
+        }
+        return hit;
+    }
+
+    if let Some(name) = catalog_cache::get_session_cached(barcode) {
+        env_config::app_log(&format!("[Lookup] Session cache hit for {barcode}"));
+        return LookupResult {
+            found: true,
+            product_name: Some(name),
+            active_ingredient: None,
+            atc_code: None,
+            source: Some("galinos".into()),
+        };
+    }
+
+    if barcode_fallback::is_commercial_barcode(barcode) {
+        if let Some(name) = commercial_registry::lookup_local(barcode) {
+            env_config::app_log(&format!("[Cache] Commercial hit for {barcode}"));
+            return LookupResult {
+                found: true,
+                product_name: Some(name),
+                active_ingredient: None,
+                atc_code: None,
+                source: Some("commercial_registry".into()),
+            };
+        }
+    }
+
+    if galinos_lookup_enabled() {
+        env_config::app_log(&format!("[Lookup] Catalog miss → Galinos fallback for {barcode}"));
+        if let Some(name) = galinos::lookup_drug_name(barcode).await {
+            catalog_cache::schedule_catalog_cache(barcode.to_string(), name.clone());
+            return LookupResult {
+                found: true,
+                product_name: Some(name),
+                active_ingredient: None,
+                atc_code: None,
+                source: Some("galinos".into()),
+            };
+        }
+    }
+
+    if eprescription::is_national_eof_barcode(barcode) {
+        if let Some(name) = eprescription::lookup_eprescription(barcode).await {
+            catalog_cache::schedule_catalog_cache_with_source(
+                barcode.to_string(),
+                name.clone(),
+                "eprescription",
+            );
+            return LookupResult {
+                found: true,
+                product_name: Some(name),
+                active_ingredient: None,
+                atc_code: None,
+                source: Some("eprescription".into()),
+            };
+        }
+
+        env_config::app_log(&format!(
+            "[Lookup] No result for {barcode} (manual entry required)"
+        ));
+        return LookupResult {
+            found: false,
+            product_name: None,
+            active_ingredient: None,
+            atc_code: None,
+            source: None,
+        };
+    }
+
+    if barcode_fallback::is_commercial_barcode(barcode) {
+        if let Some(hit) = barcode_fallback::lookup_open_food_facts(barcode).await {
+            commercial_registry::schedule_save(barcode.to_string(), hit.product_name.clone());
+            return LookupResult {
+                found: true,
+                product_name: Some(hit.product_name),
+                active_ingredient: None,
+                atc_code: None,
+                source: Some("openfoodfacts".into()),
+            };
+        }
+
+        barcode_fallback::log_unresolved(
+            barcode,
+            "catalog+commercial_registry+galinos+openfoodfacts all missed; needs manual pairing",
+        );
+    } else {
+        env_config::app_log(&format!(
+            "[Lookup] No result for {barcode} (manual entry required)"
+        ));
+    }
+
+    LookupResult {
+        found: false,
+        product_name: None,
+        active_ingredient: None,
+        atc_code: None,
+        source: None,
+    }
+}
+
+/// Queries only the Supabase `global_product_catalog` via the Edge Function.
+async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
     let functions_url = match env_config::get_env("SUPABASE_FUNCTIONS_URL") {
         Some(v) => v,
         None => {
             env_config::app_log("[Lookup] Missing SUPABASE_FUNCTIONS_URL");
-            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None };
+            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None, source: None };
         }
     };
     let anon_key = match env_config::get_env("SUPABASE_ANON_KEY") {
         Some(v) => v,
         None => {
             env_config::app_log("[Lookup] Missing SUPABASE_ANON_KEY");
-            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None };
+            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None, source: None };
         }
     };
 
@@ -96,7 +226,7 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
         Ok(r) => r,
         Err(ex) => {
             env_config::app_log(&format!("[Lookup] Network error: {ex}"));
-            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None };
+            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None, source: None };
         }
     };
 
@@ -117,11 +247,12 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 product_name: parsed.get("product_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 active_ingredient: None,
                 atc_code: None,
+                source: Some("catalog".into()),
             };
         }
     }
 
-    LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None }
+    LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None, source: None }
 }
 
 pub async fn get_recommendation(barcode: &str, product_name: Option<&str>) -> RecommendationDto {

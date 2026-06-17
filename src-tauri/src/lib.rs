@@ -1,5 +1,10 @@
+mod barcode_fallback;
 mod barcode_hook;
+mod catalog_cache;
+mod commercial_registry;
 mod env_config;
+mod eprescription;
+mod galinos;
 mod recommendation;
 
 use recommendation::RecommendationDto;
