@@ -27,6 +27,38 @@ pub struct LookupResult {
     /// Edge Function, so it must default when deserializing the catalog response.
     #[serde(default)]
     pub source: Option<String>,
+    /// Human-readable explanation when `found` is false (shown in preview panel).
+    #[serde(default)]
+    pub miss_reason: Option<String>,
+}
+
+fn lookup_miss(miss_reason: impl Into<String>) -> LookupResult {
+    LookupResult {
+        found: false,
+        product_name: None,
+        active_ingredient: None,
+        atc_code: None,
+        source: None,
+        miss_reason: Some(miss_reason.into()),
+    }
+}
+
+fn barcode_format_hint(barcode: &str) -> String {
+    if eprescription::is_national_eof_barcode(barcode) {
+        format!("barcode {barcode} (εθνικός ΕΟΦ 280…)")
+    } else if barcode_fallback::is_commercial_barcode(barcode) {
+        format!(
+            "barcode {barcode} ({})",
+            barcode_fallback::commercial_prefix_label(barcode)
+        )
+    } else if barcode.len() == 13 && barcode.chars().all(|c| c.is_ascii_digit()) {
+        format!("barcode {barcode} (13 ψηφία, όχι στον κατάλογο)")
+    } else {
+        format!(
+            "barcode {barcode} ({} ψηφία — όχι εθνικός ΕΟΦ 280…)",
+            barcode.len()
+        )
+    }
 }
 
 pub async fn lookup_barcode(barcode: &str) -> LookupResult {
@@ -41,13 +73,7 @@ pub async fn lookup_barcode(barcode: &str) -> LookupResult {
 
 fn lookup_barcode_test(barcode: &str) -> LookupResult {
     if barcode == "0000000000000" {
-        return LookupResult {
-            found: false,
-            product_name: None,
-            active_ingredient: None,
-            atc_code: None,
-            source: None,
-        };
+        return lookup_miss("TEST profile: barcode ρυθμισμένο ως not-found");
     }
     if barcode == "1111111111111" {
         return LookupResult {
@@ -56,6 +82,7 @@ fn lookup_barcode_test(barcode: &str) -> LookupResult {
             active_ingredient: Some("Paracetamol / Caffeine".into()),
             atc_code: Some("N02BE51".into()),
             source: Some("catalog".into()),
+            miss_reason: None,
         };
     }
     let suffix = if barcode.len() >= 4 { &barcode[barcode.len() - 4..] } else { barcode };
@@ -65,6 +92,7 @@ fn lookup_barcode_test(barcode: &str) -> LookupResult {
         active_ingredient: Some("Test Ingredient".into()),
         atc_code: Some("N/A".into()),
         source: Some("catalog".into()),
+        miss_reason: None,
     }
 }
 
@@ -79,14 +107,20 @@ fn galinos_lookup_enabled() -> bool {
 
 /// PROD lookup: catalog → session cache → commercial registry → Galinos → OpenFoodFacts → unresolved.
 async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
-    let result = lookup_catalog_prod(barcode).await;
-    if result.found {
-        let mut hit = result;
+    let catalog = lookup_catalog_prod(barcode).await;
+    if catalog.found {
+        let mut hit = catalog;
         if hit.source.is_none() {
             hit.source = Some("catalog".into());
         }
         return hit;
     }
+
+    if let Some(reason) = catalog.miss_reason {
+        return lookup_miss(reason);
+    }
+
+    let mut steps = vec!["κατάλογος Supabase: όχι".to_string()];
 
     if let Some(name) = catalog_cache::get_session_cached(barcode) {
         env_config::app_log(&format!("[Lookup] Session cache hit for {barcode}"));
@@ -96,6 +130,7 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
             active_ingredient: None,
             atc_code: None,
             source: Some("galinos".into()),
+            miss_reason: None,
         };
     }
 
@@ -108,8 +143,10 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 active_ingredient: None,
                 atc_code: None,
                 source: Some("commercial_registry".into()),
+                miss_reason: None,
             };
         }
+        steps.push("commercial registry: όχι".into());
     }
 
     if galinos_lookup_enabled() {
@@ -122,8 +159,12 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 active_ingredient: None,
                 atc_code: None,
                 source: Some("galinos".into()),
+                miss_reason: None,
             };
         }
+        steps.push("Galinos: όχι".into());
+    } else {
+        steps.push("Galinos: απενεργοποιημένο".into());
     }
 
     if eprescription::is_national_eof_barcode(barcode) {
@@ -139,19 +180,19 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 active_ingredient: None,
                 atc_code: None,
                 source: Some("eprescription".into()),
+                miss_reason: None,
             };
         }
 
+        steps.push("e-prescription.gr: όχι".into());
         env_config::app_log(&format!(
             "[Lookup] No result for {barcode} (manual entry required)"
         ));
-        return LookupResult {
-            found: false,
-            product_name: None,
-            active_ingredient: None,
-            atc_code: None,
-            source: None,
-        };
+        return lookup_miss(format!(
+            "{} · {}",
+            steps.join(" · "),
+            barcode_format_hint(barcode)
+        ));
     }
 
     if barcode_fallback::is_commercial_barcode(barcode) {
@@ -163,9 +204,11 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 active_ingredient: None,
                 atc_code: None,
                 source: Some("openfoodfacts".into()),
+                miss_reason: None,
             };
         }
 
+        steps.push("OpenFoodFacts: όχι".into());
         barcode_fallback::log_unresolved(
             barcode,
             "catalog+commercial_registry+galinos+openfoodfacts all missed; needs manual pairing",
@@ -176,13 +219,11 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
         ));
     }
 
-    LookupResult {
-        found: false,
-        product_name: None,
-        active_ingredient: None,
-        atc_code: None,
-        source: None,
-    }
+    lookup_miss(format!(
+        "{} · {}",
+        steps.join(" · "),
+        barcode_format_hint(barcode)
+    ))
 }
 
 /// Queries only the Supabase `global_product_catalog` via the Edge Function.
@@ -191,14 +232,14 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
         Some(v) => v,
         None => {
             env_config::app_log("[Lookup] Missing SUPABASE_FUNCTIONS_URL");
-            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None, source: None };
+            return lookup_miss("Λείπει SUPABASE_FUNCTIONS_URL στο .env");
         }
     };
     let anon_key = match env_config::get_env("SUPABASE_ANON_KEY") {
         Some(v) => v,
         None => {
             env_config::app_log("[Lookup] Missing SUPABASE_ANON_KEY");
-            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None, source: None };
+            return lookup_miss("Λείπει SUPABASE_ANON_KEY στο .env");
         }
     };
 
@@ -226,12 +267,21 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
         Ok(r) => r,
         Err(ex) => {
             env_config::app_log(&format!("[Lookup] Network error: {ex}"));
-            return LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None, source: None };
+            return lookup_miss(format!("Σφάλμα δικτύου Supabase: {ex}"));
         }
     };
 
+    let status = response.status();
     let body = response.text().await.unwrap_or_default();
     env_config::app_log(&format!("[Lookup] Response: {body}"));
+
+    if !status.is_success() {
+        return lookup_miss(format!(
+            "Supabase HTTP {} — {}",
+            status.as_u16(),
+            body.chars().take(120).collect::<String>()
+        ));
+    }
 
     if let Ok(result) = serde_json::from_str::<LookupResult>(&body) {
         return result;
@@ -248,11 +298,12 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
                 active_ingredient: None,
                 atc_code: None,
                 source: Some("catalog".into()),
+                miss_reason: None,
             };
         }
     }
 
-    LookupResult { found: false, product_name: None, active_ingredient: None, atc_code: None, source: None }
+    lookup_miss("Μη έγκυρη απάντηση Supabase (lookup_only)")
 }
 
 pub async fn get_recommendation(barcode: &str, product_name: Option<&str>) -> RecommendationDto {

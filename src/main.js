@@ -6,10 +6,12 @@ const WINDOW = getCurrentWindow();
 
 const SIZES = {
   collapsed: { width: 250, height: 288 },
-  preview: { width: 368, height: 340 },
+  preview: { width: 368, height: 520 },
   success: { width: 368, height: 520 },
-  error: { width: 368, height: 400 },
+  error: { width: 368, height: 480 },
 };
+
+const WINDOW_LAYOUT_PADDING_Y = 20;
 
 const ORB_STATES = ["state-idle", "state-thinking", "state-success", "state-error"];
 
@@ -21,6 +23,7 @@ const previewStatus = $("preview-status");
 const previewProductName = $("preview-product-name");
 const previewBarcode = $("preview-barcode");
 const manualNameInput = $("manual-name-input");
+const previewLookupDetail = $("preview-lookup-detail");
 const recommendBtn = $("recommend-btn");
 
 const responsePanel = $("response-panel");
@@ -34,6 +37,9 @@ const orbScanDisplay = $("orb-scan-display");
 const orbHookBuffer = $("orb-hook-buffer");
 
 let lastHookBuffer = "";
+let lastAcceptedBarcode = "";
+
+const MANUAL_ENTRY_BARCODE = "manual-entry";
 
 let currentRecommendation = "";
 let panelOpen = false;
@@ -247,9 +253,23 @@ function triggerFlash() {
   orb.addEventListener("animationend", () => orb.classList.remove("flash-active"), { once: true });
 }
 
+async function waitForLayout() {
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
 async function resizeWindow(sizeKey) {
   const size = SIZES[sizeKey];
-  await WINDOW.setSize(new LogicalSize(size.width, size.height));
+
+  if (sizeKey === "collapsed") {
+    await WINDOW.setSize(new LogicalSize(size.width, size.height));
+    return;
+  }
+
+  await waitForLayout();
+  const layout = $("main-layout");
+  const contentHeight = (layout?.scrollHeight ?? 0) + WINDOW_LAYOUT_PADDING_Y;
+  const height = Math.max(size.height, contentHeight);
+  await WINDOW.setSize(new LogicalSize(size.width, height));
 }
 
 async function writeClipboard(text) {
@@ -281,12 +301,22 @@ async function showPreview(lookupResult, barcode) {
     previewProductName.classList.remove("hidden");
     manualNameInput.classList.add("hidden");
     manualNameInput.value = "";
+    previewLookupDetail.classList.add("hidden");
+    previewLookupDetail.textContent = "";
   } else {
     previewStatus.textContent = "Δεν βρέθηκε — πληκτρολογήστε όνομα";
     previewProductName.textContent = "";
     previewProductName.classList.add("hidden");
     manualNameInput.classList.remove("hidden");
     manualNameInput.value = "";
+    if (lookupResult.miss_reason) {
+      previewLookupDetail.textContent = lookupResult.miss_reason;
+      previewLookupDetail.classList.remove("hidden");
+      previewLookupDetail.title = lookupResult.miss_reason;
+    } else {
+      previewLookupDetail.classList.add("hidden");
+      previewLookupDetail.textContent = "";
+    }
     setTimeout(() => manualNameInput.focus(), 100);
   }
 
@@ -314,6 +344,30 @@ async function collapsePreview() {
   previewOpen = false;
   pendingLookup = null;
   await resizeWindow("collapsed");
+}
+
+async function openManualEntry() {
+  if (processing) return;
+
+  if (previewOpen && pendingLookup && !pendingLookup.found) {
+    manualNameInput.focus();
+    return;
+  }
+
+  if (panelOpen) await collapsePanel();
+  if (previewOpen) await collapsePreview();
+
+  const barcode = lastAcceptedBarcode || MANUAL_ENTRY_BARCODE;
+  await showPreview(
+    { found: false, product_name: null, active_ingredient: null, atc_code: null },
+    barcode,
+  );
+  previewStatus.textContent = "Πληκτρολογήστε όνομα φαρμάκου";
+  previewLookupDetail.classList.add("hidden");
+  previewLookupDetail.textContent = "";
+  if (!lastAcceptedBarcode) {
+    previewBarcode.textContent = "—";
+  }
 }
 
 // ── Step 2: Recommendation panel ──
@@ -398,6 +452,7 @@ async function processBarcode(rawBarcode) {
   }
 
   const barcode = normalized.barcode;
+  lastAcceptedBarcode = barcode;
   updateOrbScanDisplay(rawBarcode, "ok", barcode);
   console.log(`[Scan] Accepted: ${barcode}`);
 
@@ -409,6 +464,9 @@ async function processBarcode(rawBarcode) {
 
     const lookupResult = await invoke("lookup_barcode", { barcode });
     console.log("[Lookup] Result:", lookupResult);
+    if (!lookupResult.found) {
+      console.log("[Lookup] Miss reason:", lookupResult.miss_reason || "(none)");
+    }
     await showPreview(lookupResult, barcode);
   } catch (err) {
     console.error("[Lookup] Exception:", err);
@@ -529,6 +587,12 @@ function setupPanelControls() {
 }
 
 function setupWindowChrome() {
+  $("orb-manual-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    openManualEntry();
+  });
+
   $("orb-minimize-btn").addEventListener("click", (e) => {
     e.stopPropagation();
     e.preventDefault();

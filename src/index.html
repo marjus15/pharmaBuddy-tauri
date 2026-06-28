@@ -51,6 +51,8 @@
             autocomplete="off"
           />
 
+          <p id="preview-lookup-detail" class="lookup-detail hidden"></p>
+
           <div class="panel-footer">
             <span id="preview-barcode" class="barcode-display"></span>
             <button id="recommend-btn" class="recommend-btn" type="button">Πρόταση</button>
@@ -98,6 +100,16 @@
             <div class="orb-chrome">
               <button
                 type="button"
+                id="orb-manual-btn"
+                class="orb-chrome-btn orb-chrome-btn-add"
+                title="Χειροκίνητη εισαγωγή ονόματος"
+                aria-label="Χειροκίνητη εισαγωγή ονόματος"
+              >
+                +
+              </button>
+              <div class="orb-chrome-right">
+              <button
+                type="button"
                 id="orb-minimize-btn"
                 class="orb-chrome-btn"
                 title="Ελαχιστοποίηση"
@@ -114,6 +126,7 @@
               >
                 ×
               </button>
+              </div>
             </div>
             <div
               id="orb"
