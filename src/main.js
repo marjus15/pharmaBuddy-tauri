@@ -5,7 +5,7 @@ const { getCurrentWindow, LogicalSize } = window.__TAURI__.window;
 const WINDOW = getCurrentWindow();
 
 const SIZES = {
-  collapsed: { width: 250, height: 245 },
+  collapsed: { width: 250, height: 288 },
   preview: { width: 368, height: 340 },
   success: { width: 368, height: 520 },
   error: { width: 368, height: 400 },
@@ -30,6 +30,10 @@ const recommendationText = $("recommendation-text");
 const barcodeDisplay = $("barcode-display");
 const profileBadge = $("profile-badge");
 const scanFallback = $("scan-fallback");
+const orbScanDisplay = $("orb-scan-display");
+const orbHookBuffer = $("orb-hook-buffer");
+
+let lastHookBuffer = "";
 
 let currentRecommendation = "";
 let panelOpen = false;
@@ -149,6 +153,91 @@ function isNetworkErrorMessage(text) {
 function setOrbState(state) {
   ORB_STATES.forEach((s) => orb.classList.remove(s));
   orb.classList.add(`state-${state}`);
+}
+
+function truncateForOrbDisplay(value, maxLen = 42) {
+  const text = String(value ?? "").trim();
+  if (!text) return "—";
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 1)}…`;
+}
+
+function updateOrbScanDisplay(rawValue, status = "idle", normalizedValue = "") {
+  if (!orbScanDisplay) return;
+
+  orbScanDisplay.classList.remove("scan-ok", "scan-error", "scan-pending");
+
+  const raw = String(rawValue ?? "").trim();
+  const normalized = String(normalizedValue ?? "").trim();
+
+  if (status === "pending") {
+    orbScanDisplay.classList.add("scan-pending");
+    orbScanDisplay.textContent = raw ? `SCAN: ${truncateForOrbDisplay(raw)}` : "Αναμονή scan…";
+    orbScanDisplay.title = raw || "Αναμονή barcode από scanner";
+    return;
+  }
+
+  if (status === "ok") {
+    orbScanDisplay.classList.add("scan-ok");
+    const shown = normalized || raw;
+    orbScanDisplay.textContent = shown ? `✓ ${truncateForOrbDisplay(shown)}` : "—";
+    orbScanDisplay.title = normalized && raw && normalized !== raw
+      ? `Raw: ${raw}\nNormalized: ${normalized}`
+      : shown;
+    return;
+  }
+
+  if (status === "error") {
+    orbScanDisplay.classList.add("scan-error");
+    orbScanDisplay.textContent = raw
+      ? `✗ ${truncateForOrbDisplay(raw)}`
+      : "✗ Κενό scan";
+    orbScanDisplay.title = normalized
+      ? `Raw: ${raw || "(κενό)"}\nParsed: ${normalized}`
+      : raw || "Δεν λήφθηκαν δεδομένα από scanner";
+    return;
+  }
+
+  orbScanDisplay.textContent = raw ? truncateForOrbDisplay(raw) : "—";
+  orbScanDisplay.title = raw || "Τελευταίο scan";
+}
+
+function updateOrbHookBuffer(payload = {}) {
+  if (!orbHookBuffer) return;
+
+  const buffer = String(payload.buffer ?? "");
+  const length = Number.isFinite(payload.length) ? payload.length : buffer.length;
+  const event = String(payload.event ?? "");
+
+  if (event === "flush" || event === "timeout_clear") {
+    lastHookBuffer = buffer;
+  }
+
+  orbHookBuffer.classList.remove("hook-live", "hook-flush", "hook-timeout");
+
+  if (buffer) {
+    orbHookBuffer.classList.add("hook-live");
+    orbHookBuffer.textContent = `HOOK[${length}]: ${truncateForOrbDisplay(buffer, 36)}`;
+    orbHookBuffer.title = buffer;
+    return;
+  }
+
+  if (lastHookBuffer) {
+    const lastLen = lastHookBuffer.length;
+    if (event === "timeout_clear") {
+      orbHookBuffer.classList.add("hook-timeout");
+      orbHookBuffer.textContent = `TIMEOUT[${lastLen}]: ${truncateForOrbDisplay(lastHookBuffer, 32)}`;
+      orbHookBuffer.title = `Buffer cleared by timeout (> threshold)\n${lastHookBuffer}`;
+    } else {
+      orbHookBuffer.classList.add("hook-flush");
+      orbHookBuffer.textContent = `LAST[${lastLen}]: ${truncateForOrbDisplay(lastHookBuffer, 32)}`;
+      orbHookBuffer.title = `Last hook buffer before Enter/Tab\n${lastHookBuffer}`;
+    }
+    return;
+  }
+
+  orbHookBuffer.textContent = "HOOK[0]: —";
+  orbHookBuffer.title = "Live keyboard hook buffer (empty)";
 }
 
 function triggerFlash() {
@@ -298,14 +387,18 @@ async function handleError(barcode, result) {
 async function processBarcode(rawBarcode) {
   if (processing) return;
 
+  updateOrbScanDisplay(rawBarcode, "pending");
+
   const normalized = normalizeBarcodeInput(rawBarcode);
   if (!normalized.ok) {
     console.log("[Scan] Rejected:", normalized);
+    updateOrbScanDisplay(rawBarcode, "error", normalized.barcode || normalized.debugInfo);
     await handleError(normalized.barcode, buildUiError(normalized.errorMessage, normalized.debugInfo));
     return;
   }
 
   const barcode = normalized.barcode;
+  updateOrbScanDisplay(rawBarcode, "ok", barcode);
   console.log(`[Scan] Accepted: ${barcode}`);
 
   try {
@@ -487,6 +580,19 @@ async function init() {
   await listen("barcode-scanned", (event) => {
     console.log("[Hook] barcode-scanned event:", event.payload);
     processBarcode(event.payload);
+  });
+
+  await listen("scan-attempt", (event) => {
+    const payload = event.payload || {};
+    console.log("[Hook] scan-attempt:", payload);
+    if (payload.accepted === false) {
+      updateOrbScanDisplay(payload.raw || "", "error", payload.reason || "");
+    }
+  });
+
+  await listen("hook-buffer", (event) => {
+    console.log("[Hook] hook-buffer:", event.payload);
+    updateOrbHookBuffer(event.payload || {});
   });
 
   setOrbState("idle");

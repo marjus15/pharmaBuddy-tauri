@@ -17,7 +17,7 @@ fn hook_state() -> &'static Mutex<HookState> {
     let threshold_ms = env_config::get_env("PHARMABUDDY_SCANNER_THRESHOLD_MS")
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|v| *v > 0)
-        .unwrap_or(120);
+        .unwrap_or(400);
 
     HOOK_STATE.get_or_init(|| {
         Mutex::new(HookState {
@@ -44,6 +44,7 @@ mod win_hook {
     static INSTALLED: AtomicBool = AtomicBool::new(false);
 
     const VK_RETURN: i32 = 0x0D;
+    const VK_TAB: i32 = 0x09;
     const VK_0: i32 = 0x30;
     const VK_9: i32 = 0x39;
     const VK_A: i32 = 0x41;
@@ -80,33 +81,82 @@ mod win_hook {
         None
     }
 
+    fn emit_scan_attempt(raw: &str, accepted: bool, reason: &str) {
+        if let Some(app) = APP_HANDLE.get() {
+            let _ = app.emit(
+                "scan-attempt",
+                serde_json::json!({
+                    "raw": raw,
+                    "accepted": accepted,
+                    "reason": reason,
+                }),
+            );
+        }
+    }
+
+    fn emit_hook_buffer(buffer: &str, event: &str) {
+        if let Some(app) = APP_HANDLE.get() {
+            let _ = app.emit(
+                "hook-buffer",
+                serde_json::json!({
+                    "buffer": buffer,
+                    "length": buffer.len(),
+                    "event": event,
+                }),
+            );
+        }
+    }
+
     fn handle_key_down(vk_code: i32) {
         let mut barcode: Option<String> = None;
+        let mut rejected: Option<(String, String)> = None;
+        let mut hook_events: Vec<(&str, String)> = Vec::new();
 
         {
             let mut state = hook_state().lock().unwrap();
             let now = Instant::now();
             if let Some(last) = state.last_keystroke {
                 if now.duration_since(last).as_millis() as u64 > state.threshold_ms {
+                    if !state.buffer.is_empty() {
+                        hook_events.push(("timeout_clear", state.buffer.clone()));
+                    }
                     state.buffer.clear();
                 }
             }
             state.last_keystroke = Some(now);
 
-            if vk_code == VK_RETURN {
-                if state.buffer.len() > 3 {
-                    barcode = Some(state.buffer.clone());
+            if vk_code == VK_RETURN || vk_code == VK_TAB {
+                let raw = state.buffer.clone();
+                if !raw.is_empty() {
+                    hook_events.push(("flush", raw.clone()));
+                }
+                if raw.len() > 3 {
+                    barcode = Some(raw);
+                } else if !raw.is_empty() {
+                    let len = raw.len();
+                    rejected = Some((
+                        raw,
+                        format!("Πολύ σύντομο scan ({len} χαρακτήρες)"),
+                    ));
                 }
                 state.buffer.clear();
+                hook_events.push(("clear", String::new()));
             } else if let Some(ch) = translate_char(vk_code) {
                 state.buffer.push(ch);
+                hook_events.push(("append", state.buffer.clone()));
             }
+        }
+
+        for (event, buffer) in hook_events {
+            emit_hook_buffer(&buffer, event);
         }
 
         if let Some(code) = barcode {
             if let Some(app) = APP_HANDLE.get() {
                 let _ = app.emit("barcode-scanned", code);
             }
+        } else if let Some((raw, reason)) = rejected {
+            emit_scan_attempt(&raw, false, &reason);
         }
     }
 

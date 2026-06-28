@@ -58,6 +58,7 @@ Output: `src-tauri/target/release/bundle/`
 | Variable | Purpose |
 |----------|---------|
 | `PHARMABUDDY_PROFILE` | `test` (mock) or `prod` (Supabase) |
+| `PHARMABUDDY_SCANNER_THRESHOLD_MS` | Max gap between scanner keystrokes before the hook buffer clears (default `400`; try `800` for slow/wireless scanners) |
 | `SUPABASE_FUNCTIONS_URL` | Full edge function URL (prod only) |
 | `SUPABASE_ANON_KEY` | Bearer token (prod only) |
 
@@ -67,6 +68,22 @@ Profile is also stored in `%LOCALAPPDATA%\pharmaBuddy\profile.txt` (shared with 
 
 - **Production:** global Windows low-level keyboard hook (works while POS/other apps are focused).
 - **Dev fallback:** focus the hidden `#scan-fallback` input (e.g. via DevTools) and type a 13-digit barcode + Enter.
+
+Under the orb, two debug lines help diagnose real scanner issues:
+
+- **Scan line** — last accepted/rejected barcode after parsing.
+- **Hook buffer line** — live keyboard hook capture (`HOOK[n]`, `LAST[n]`, `TIMEOUT[n]`).
+
+### Scanner debugging (orb hook buffer)
+
+| What you see | Likely cause |
+|--------------|--------------|
+| `HOOK[n]` stays at 0 while scanning | Hook isn't receiving scanner keystrokes (wrong scanner mode, or not HID keyboard wedge). |
+| `HOOK[n]` grows then `TIMEOUT` | Scanner is too slow; raise `PHARMABUDDY_SCANNER_THRESHOLD_MS=800` in `.env`. |
+| `LAST[n]` shows data but scan line stays empty | Buffer reached Enter but was ≤3 chars, or normalization rejected it. |
+| `LAST[n]` matches box but scan fails | Parsing issue (check the scan line above for the normalized result). |
+
+Hover either debug line for the full untruncated buffer text.
 
 ### Test barcodes (TEST profile)
 
@@ -85,7 +102,7 @@ Profile is also stored in `%LOCALAPPDATA%\pharmaBuddy\profile.txt` (shared with 
 
 | State | Size |
 |-------|------|
-| Orb only | 250×250 |
+| Orb only | 250×288 |
 | Success + panel | 368×520 |
 | Error + panel | 368×400 |
 
