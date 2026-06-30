@@ -85,11 +85,54 @@ function sanitizeBarcodeInput(rawValue) {
   return String(rawValue ?? "")
     .normalize("NFKC")
     .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/\s/g, "")
     .trim();
 }
 
 function mapGreekLayoutToDigits(value) {
   return Array.from(value).map((char) => GREEK_LAYOUT_DIGIT_MAP[char] ?? char).join("");
+}
+
+const ASCII_TRIPLET_MIN_LEN = 101;
+const ASCII_TRIPLET_PRIMARY_RATIO = 0.5;
+const GS1_FNC1_ASCII_CODE = 29;
+
+function isValidAsciiTripletCode(code) {
+  return Number.isInteger(code) && (code === GS1_FNC1_ASCII_CODE || (code >= 32 && code <= 126));
+}
+
+function looksLikeAsciiTripletEncoded(value) {
+  const digitsOnly = String(value).replace(/\D/g, "");
+  if (digitsOnly.length < ASCII_TRIPLET_MIN_LEN || digitsOnly.length % 3 !== 0) {
+    return false;
+  }
+  if (!/^\d+$/.test(digitsOnly)) {
+    return false;
+  }
+
+  const triplets = digitsOnly.match(/.{3}/g);
+  if (!triplets) {
+    return false;
+  }
+
+  let primaryPrefixCount = 0;
+  for (const triplet of triplets) {
+    const code = Number(triplet);
+    if (!isValidAsciiTripletCode(code)) {
+      return false;
+    }
+    if (triplet.startsWith("04") || triplet.startsWith("05")) {
+      primaryPrefixCount++;
+    }
+  }
+
+  return primaryPrefixCount / triplets.length >= ASCII_TRIPLET_PRIMARY_RATIO;
+}
+
+function decodeAsciiTripletScan(value) {
+  const digitsOnly = String(value).replace(/\D/g, "");
+  const triplets = digitsOnly.match(/.{3}/g) || [];
+  return triplets.map((triplet) => String.fromCharCode(Number(triplet))).join("");
 }
 
 function looksLikeGs1DataMatrix(value) {
@@ -119,8 +162,15 @@ function normalizeBarcodeInput(rawValue) {
     return { ok: false, barcode: "", errorMessage: "Δεν λήφθηκαν δεδομένα barcode από το scanner.", debugInfo: "" };
   }
 
-  const hasLetters = /\p{L}/u.test(sanitized);
-  const mapped = hasLetters ? mapGreekLayoutToDigits(sanitized) : sanitized;
+  let working = sanitized;
+  if (looksLikeAsciiTripletEncoded(working)) {
+    const decoded = decodeAsciiTripletScan(working);
+    console.log(`[Scan] ASCII triplet decode: ${working.length} -> ${decoded.length} chars`);
+    working = decoded;
+  }
+
+  const hasLetters = /\p{L}/u.test(working);
+  const mapped = hasLetters ? mapGreekLayoutToDigits(working) : working;
   const digitsOnly = mapped.replace(/\D/g, "");
 
   if (looksLikeGs1DataMatrix(mapped)) {
