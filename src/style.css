@@ -64,38 +64,211 @@ body {
 
 .main-layout {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 6px;
   width: 100%;
-  max-width: 340px;
 }
 
-/* ── Response panel ── */
-.response-panel {
-  width: 100%;
-  max-width: 316px;
+/* ── Drug sidebar (left of orb) — compact chat bubbles ──
+   Shrinks to its content (fit-content) so bubbles sit right next to the
+   orb, but is capped at max-width so long names wrap instead of clipping
+   the window. The row is right-anchored (justify-content: flex-end) so the
+   sidebar always hugs the orb regardless of how narrow the content is. */
+.drug-sidebar {
+  position: relative;
+  width: fit-content;
+  max-width: 210px;
   flex-shrink: 0;
-  background: rgba(10, 17, 24, 0.9);
-  border: 1px solid rgba(0, 212, 255, 0.4);
-  border-radius: 12px;
-  padding: 14px 12px;
+  background: transparent;
+  border: none;
+  padding: 22px 0 0;
   opacity: 0;
-  transform: translateY(12px);
-  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+  transform: translateX(-6px);
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
 
-.response-panel.visible {
+.drug-sidebar.visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateX(0);
 }
 
-.response-panel.hidden {
+.drug-sidebar.hidden {
   display: none;
 }
 
-.response-panel.error-border {
-  border-color: rgba(255, 107, 126, 0.5);
+.sidebar-close-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(10, 17, 24, 0.85);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-close-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(30, 40, 50, 0.95);
+}
+
+.drug-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
+  max-height: 340px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 232, 255, 0.4) transparent;
+}
+
+.drug-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.drug-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(0, 168, 216, 0.5);
+}
+
+.drug-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
+}
+
+.drug-item.highlight .drug-name-btn {
+  animation: drug-highlight 0.8s ease-out;
+}
+
+@keyframes drug-highlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 232, 255, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 10px 2px rgba(0, 232, 255, 0.45);
+  }
+  100% {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  }
+}
+
+.drug-name-btn {
+  display: -webkit-box;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  background: rgba(0, 74, 88, 0.95);
+  border: none;
+  border-radius: 14px 14px 14px 4px;
+  color: #eefaff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.drug-name-btn:hover:not(:disabled) {
+  background: rgba(0, 96, 112, 0.98);
+}
+
+.drug-name-btn.active {
+  background: rgba(0, 116, 134, 1);
+  box-shadow: 0 0 8px rgba(0, 232, 255, 0.3);
+}
+
+.drug-name-btn.loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.drug-name-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.drug-recommendation {
+  width: fit-content;
+  max-width: 100%;
+  max-height: 200px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: rgba(20, 30, 40, 0.96);
+  border: none;
+  border-radius: 14px 14px 4px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 232, 255, 0.35) transparent;
+}
+
+.drug-recommendation::-webkit-scrollbar {
+  width: 4px;
+}
+
+.drug-recommendation::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(0, 168, 216, 0.5);
+}
+
+.drug-recommendation.hidden {
+  display: none;
+}
+
+.drug-recommendation .recommendation-text {
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.drug-recommendation.error {
+  background: rgba(64, 26, 30, 0.95);
+}
+
+.drug-recommendation.error .recommendation-text {
+  color: rgba(255, 180, 190, 0.95);
+}
+
+.manual-entry-row {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.manual-entry-row.hidden {
+  display: none;
+}
+
+.manual-entry-row .manual-name-input {
+  width: 100%;
+  padding: 9px 12px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  border-radius: 14px 14px 14px 4px;
+  border: none;
+  background: rgba(0, 74, 88, 0.75);
 }
 
 .panel-header {
@@ -125,78 +298,12 @@ body {
   flex-shrink: 0;
 }
 
-.response-panel.error-border .status-dot {
-  background: #ff6b7e;
-}
 
 .status-message {
   font-family: Consolas, monospace;
   font-size: 11px;
   font-weight: 600;
   color: rgba(0, 212, 255, 0.53);
-}
-
-.product-name {
-  margin: 0 0 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #f4faff;
-  line-height: 1.3;
-}
-
-.panel-divider {
-  height: 1px;
-  background: rgba(0, 212, 255, 0.25);
-  margin-bottom: 8px;
-}
-
-.recommendation-scroll {
-  max-height: 140px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  margin-bottom: 8px;
-  padding-right: 6px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 232, 255, 0.65) rgba(10, 17, 24, 0.55);
-}
-
-.recommendation-scroll::-webkit-scrollbar {
-  width: 5px;
-}
-
-.recommendation-scroll::-webkit-scrollbar-track {
-  background: rgba(10, 17, 24, 0.65);
-  border-radius: 999px;
-  border: 1px solid rgba(0, 212, 255, 0.12);
-}
-
-.recommendation-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: linear-gradient(
-    180deg,
-    rgba(0, 240, 255, 0.95) 0%,
-    rgba(0, 168, 216, 0.75) 100%
-  );
-  box-shadow: 0 0 6px rgba(0, 232, 255, 0.45);
-}
-
-.recommendation-scroll::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(
-    180deg,
-    rgba(120, 255, 255, 1) 0%,
-    rgba(0, 220, 255, 0.9) 100%
-  );
-}
-
-.recommendation-scroll::-webkit-scrollbar-thumb:active {
-  background: rgba(0, 255, 255, 1);
-}
-
-.recommendation-scroll::-webkit-scrollbar-button,
-.recommendation-scroll::-webkit-scrollbar-corner {
-  display: none;
-  width: 0;
-  height: 0;
 }
 
 .recommendation-text {
@@ -245,28 +352,10 @@ body {
   padding: 4px 10px;
 }
 
-.recommend-btn {
-  background: rgba(0, 212, 255, 0.25);
-  color: #00e8ff;
-  border: 1px solid rgba(0, 212, 255, 0.45);
-  border-radius: 6px;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 16px;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.recommend-btn:hover {
-  background: rgba(0, 212, 255, 0.4);
-  border-color: rgba(0, 232, 255, 0.7);
-}
-
 .manual-name-input {
   width: 100%;
   padding: 8px 10px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   background: rgba(0, 20, 30, 0.7);
   border: 1px solid rgba(0, 212, 255, 0.35);
   border-radius: 6px;
@@ -285,10 +374,6 @@ body {
 .manual-name-input:focus {
   border-color: rgba(0, 232, 255, 0.65);
   box-shadow: 0 0 8px rgba(0, 232, 255, 0.15);
-}
-
-.manual-name-input.hidden {
-  display: none;
 }
 
 .lookup-detail {
@@ -321,7 +406,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 0;
-  width: 100%;
+  width: 250px;
   flex-shrink: 0;
 }
 
@@ -412,7 +497,7 @@ body {
   font-family: Consolas, monospace;
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.06em;
   line-height: 1;
   color: var(--cyan);
   text-shadow: 0 0 12px rgba(0, 232, 255, 0.6);

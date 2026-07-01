@@ -4,33 +4,27 @@ const { getCurrentWindow, LogicalSize } = window.__TAURI__.window;
 
 const WINDOW = getCurrentWindow();
 
+// "sidebar" width is fixed on purpose (orb 250 + gap 12 + sidebar column 200 + app padding).
+// Bubbles inside the sidebar are capped at 100% of that fixed column (see style.css),
+// so the window never needs to be measured/resized based on text content — this avoids
+// the previous bug where long drug names got clipped past the left edge of the window.
 const SIZES = {
   collapsed: { width: 250, height: 288 },
-  preview: { width: 368, height: 520 },
-  success: { width: 368, height: 520 },
-  error: { width: 368, height: 480 },
+  sidebar: { width: 500, height: 320 },
 };
 
-const WINDOW_LAYOUT_PADDING_Y = 20;
+const WINDOW_LAYOUT_PADDING_Y = 24;
 
 const ORB_STATES = ["state-idle", "state-thinking", "state-success", "state-error"];
 
 const $ = (id) => document.getElementById(id);
 
 const orb = $("orb");
-const previewPanel = $("preview-panel");
-const previewStatus = $("preview-status");
-const previewProductName = $("preview-product-name");
-const previewBarcode = $("preview-barcode");
+const drugSidebar = $("drug-sidebar");
+const drugList = $("drug-list");
+const manualEntryRow = $("manual-entry-row");
 const manualNameInput = $("manual-name-input");
-const previewLookupDetail = $("preview-lookup-detail");
-const recommendBtn = $("recommend-btn");
-
-const responsePanel = $("response-panel");
-const statusMessage = $("status-message");
-const productName = $("product-name");
-const recommendationText = $("recommendation-text");
-const barcodeDisplay = $("barcode-display");
+const sidebarLookupDetail = $("sidebar-lookup-detail");
 const profileBadge = $("profile-badge");
 const scanFallback = $("scan-fallback");
 const orbScanDisplay = $("orb-scan-display");
@@ -38,19 +32,19 @@ const orbHookBuffer = $("orb-hook-buffer");
 
 let lastHookBuffer = "";
 let lastAcceptedBarcode = "";
+let pendingManualBarcode = "";
 
 const MANUAL_ENTRY_BARCODE = "manual-entry";
 
-let currentRecommendation = "";
-let panelOpen = false;
-let previewOpen = false;
+/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,recommendation:string|null,errorMessage:string|null,status:string}>} */
+let scannedDrugs = [];
+let activeDrugId = null;
+let sidebarOpen = false;
 let processing = false;
-
-let pendingLookup = null;
+let lookupInFlight = false;
 
 const RECOMMENDATION_TIMEOUT_MS = 35000;
 
-// Defensive defaults for keyboard-layout misreads (Greek/Latin lookalikes).
 const GREEK_LAYOUT_DIGIT_MAP_DEFAULT = Object.freeze({
   c: "0", C: "0", o: "0", O: "0", "ο": "0", "Ο": "0",
   g: "6", G: "6", b: "8", B: "8",
@@ -67,8 +61,7 @@ const GREEK_LAYOUT_DIGIT_MAP = Object.freeze({
   ...GREEK_LAYOUT_DIGIT_MAP_OVERRIDE,
 });
 
-const INVALID_SCAN_FORMAT_MESSAGE =
-  "Μη έγκυρη μορφή barcode.";
+const INVALID_SCAN_FORMAT_MESSAGE = "Μη έγκυρη μορφή barcode.";
 const NETWORK_ERROR_MESSAGE =
   "Αποτυχία σύνδεσης με Supabase. Ελέγξτε δίκτυο ή firewall και δοκιμάστε ξανά.";
 const PRODUCT_NOT_FOUND_MESSAGE = "Το προϊόν δεν βρέθηκε στη βάση δεδομένων.";
@@ -79,6 +72,54 @@ function buildUiError(errorMessage, rawResponse = "") {
     error_message: errorMessage || "Σφάλμα",
     raw_response: rawResponse || "",
   };
+}
+
+// Strip dosage + packaging tail so only the drug name remains, e.g.
+//   "VARESTA F.C.TAB 5MG/TAB BT X 28 TABS ΣΕ BLISTER PVC/PVDC//ALU" -> "VARESTA F.C.TAB"
+//   "LENVATINIB/ELPEN CAPS 4MG/CAP BT X 30 CAPS ΣΕ BLISTER OPA/A"   -> "LENVATINIB/ELPEN CAPS"
+//   "AUGMENTIN F.C.TAB (875+125)MG/TAB BTx12"                        -> "AUGMENTIN F.C.TAB"
+function shortDisplayName(fullName) {
+  const raw = String(fullName ?? "").trim();
+  if (!raw) return "—";
+
+  // Markers where the packaging/dosage part begins.
+  const cutMarkers = [
+    /\(?\d[\d.,+\s]*\)?\s*(MG|MCG|ML|G|IU|%)\b/i, // dosage: 5MG, 4MG/CAP, (875+125)MG
+    /\bBT\s*X?\b/i,                                // packaging: BT X 30, BTx12
+    /\bΣΕ\b/,                                      // Greek "in" (ΣΕ BLISTER ...)
+    /\bBLISTER\b/i,
+    /\(/,                                          // any parenthesis group
+  ];
+
+  let cutIdx = raw.length;
+  for (const marker of cutMarkers) {
+    const m = raw.match(marker);
+    if (m && m.index !== undefined && m.index > 0 && m.index < cutIdx) {
+      cutIdx = m.index;
+    }
+  }
+
+  let name = raw.slice(0, cutIdx).trim();
+  name = name.replace(/[\s,\-–/]+$/, "").trim();
+  if (!name) name = raw.trim();
+
+  if (name.length <= 60) return name;
+  return `${name.slice(0, 59)}…`;
+}
+
+function createDrugId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `drug-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function findDrugByBarcode(barcode) {
+  return scannedDrugs.find((d) => d.barcode === barcode) ?? null;
+}
+
+function findDrugById(id) {
+  return scannedDrugs.find((d) => d.id === id) ?? null;
 }
 
 function sanitizeBarcodeInput(rawValue) {
@@ -176,7 +217,7 @@ function normalizeBarcodeInput(rawValue) {
   if (looksLikeGs1DataMatrix(mapped)) {
     const gtin14 = extractGs1Gtin14(mapped);
     if (!/^\d{14}$/.test(gtin14)) {
-      return { ok: false, barcode: digitsOnly, errorMessage: INVALID_SCAN_FORMAT_MESSAGE, debugInfo: `gtin14 extraction failed` };
+      return { ok: false, barcode: digitsOnly, errorMessage: INVALID_SCAN_FORMAT_MESSAGE, debugInfo: "gtin14 extraction failed" };
     }
     if (gtin14.startsWith("0280")) {
       const eofCode13 = gtin14.slice(1);
@@ -335,227 +376,304 @@ async function writeClipboard(text) {
   }
 }
 
-// ── Step 1: Preview panel (show product name or manual input) ──
+function hideManualEntryRow() {
+  manualEntryRow.classList.add("hidden");
+  manualNameInput.value = "";
+  sidebarLookupDetail.classList.add("hidden");
+  sidebarLookupDetail.textContent = "";
+  pendingManualBarcode = "";
+}
 
-async function showPreview(lookupResult, barcode) {
-  responsePanel.classList.remove("visible");
-  responsePanel.classList.add("hidden");
-  panelOpen = false;
-
-  previewPanel.classList.remove("hidden", "error-border", "visible");
-  void previewPanel.offsetWidth;
-
-  if (lookupResult.found) {
-    previewStatus.textContent = "Βρέθηκε";
-    previewProductName.textContent = lookupResult.product_name || "";
-    previewProductName.classList.remove("hidden");
-    manualNameInput.classList.add("hidden");
-    manualNameInput.value = "";
-    previewLookupDetail.classList.add("hidden");
-    previewLookupDetail.textContent = "";
+function showManualEntryRow(barcode, missReason = "") {
+  pendingManualBarcode = barcode;
+  manualEntryRow.classList.remove("hidden");
+  manualNameInput.value = "";
+  if (missReason) {
+    sidebarLookupDetail.textContent = missReason;
+    sidebarLookupDetail.classList.remove("hidden");
+    sidebarLookupDetail.title = missReason;
   } else {
-    previewStatus.textContent = "Δεν βρέθηκε — πληκτρολογήστε όνομα";
-    previewProductName.textContent = "";
-    previewProductName.classList.add("hidden");
-    manualNameInput.classList.remove("hidden");
-    manualNameInput.value = "";
-    if (lookupResult.miss_reason) {
-      previewLookupDetail.textContent = lookupResult.miss_reason;
-      previewLookupDetail.classList.remove("hidden");
-      previewLookupDetail.title = lookupResult.miss_reason;
-    } else {
-      previewLookupDetail.classList.add("hidden");
-      previewLookupDetail.textContent = "";
-    }
-    setTimeout(() => manualNameInput.focus(), 100);
+    sidebarLookupDetail.classList.add("hidden");
+    sidebarLookupDetail.textContent = "";
   }
+  setTimeout(() => manualNameInput.focus(), 100);
+}
 
-  previewBarcode.textContent = barcode;
-  previewPanel.classList.add("visible");
-  previewOpen = true;
+async function openSidebar() {
+  drugSidebar.classList.remove("hidden");
+  void drugSidebar.offsetWidth;
+  drugSidebar.classList.add("visible");
+  sidebarOpen = true;
+  await resizeWindow("sidebar");
+}
 
-  pendingLookup = {
+async function collapseSidebar() {
+  drugSidebar.classList.remove("visible");
+  drugSidebar.classList.add("hidden");
+  sidebarOpen = false;
+  scannedDrugs = [];
+  activeDrugId = null;
+  drugList.innerHTML = "";
+  hideManualEntryRow();
+  await resizeWindow("collapsed");
+}
+
+function createDrugEntry(lookupResult, barcode) {
+  return {
+    id: createDrugId(),
     barcode,
     found: lookupResult.found,
     productName: lookupResult.product_name || "",
     activeIngredient: lookupResult.active_ingredient || "",
     atcCode: lookupResult.atc_code || "",
+    recommendation: null,
+    errorMessage: null,
+    status: "idle",
   };
-
-  await resizeWindow("preview");
-  setOrbState(lookupResult.found ? "success" : "idle");
-  triggerFlash();
-  setTimeout(() => setOrbState("idle"), 400);
 }
 
-async function collapsePreview() {
-  previewPanel.classList.remove("visible");
-  previewPanel.classList.add("hidden");
-  previewOpen = false;
-  pendingLookup = null;
-  await resizeWindow("collapsed");
+function highlightDrugRow(drugId) {
+  const el = drugList.querySelector(`[data-drug-id="${drugId}"]`);
+  if (!el) return;
+  el.classList.remove("highlight");
+  void el.offsetWidth;
+  el.classList.add("highlight");
+  el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function syncDrugItemElement(el, drug) {
+  const btn = el.querySelector(".drug-name-btn");
+  const recBlock = el.querySelector(".drug-recommendation");
+  const recText = el.querySelector(".recommendation-text");
+
+  btn.textContent = shortDisplayName(drug.productName || drug.barcode);
+  btn.title = drug.productName || drug.barcode;
+  btn.disabled = processing && drug.status === "loading";
+  btn.classList.toggle("active", drug.id === activeDrugId);
+  btn.classList.toggle("loading", drug.status === "loading");
+
+  const isActive = drug.id === activeDrugId;
+
+  if (drug.status === "loading") {
+    recBlock.classList.remove("hidden", "error");
+    recText.textContent = "Αναμονή πρότασης…";
+  } else if (isActive && drug.status === "done" && drug.recommendation) {
+    recBlock.classList.remove("hidden", "error");
+    recText.textContent = drug.recommendation;
+  } else if (isActive && drug.status === "error" && drug.errorMessage) {
+    recBlock.classList.remove("hidden");
+    recBlock.classList.add("error");
+    recText.textContent = drug.errorMessage;
+  } else {
+    recBlock.classList.add("hidden");
+    recBlock.classList.remove("error");
+    recText.textContent = "";
+  }
+}
+
+function collapseDrugRecommendation(drugId) {
+  if (activeDrugId !== drugId) return;
+  activeDrugId = null;
+  renderDrugList();
+  resizeWindow("sidebar");
+}
+
+let pendingClickTimer = null;
+let lastClickDrugId = null;
+let lastClickTime = 0;
+const DOUBLE_CLICK_MS = 350;
+
+function handleDrugNameClick(drugId) {
+  const now = Date.now();
+  const isDouble = drugId === lastClickDrugId && now - lastClickTime < DOUBLE_CLICK_MS;
+
+  if (isDouble) {
+    if (pendingClickTimer) {
+      clearTimeout(pendingClickTimer);
+      pendingClickTimer = null;
+    }
+    lastClickDrugId = null;
+    lastClickTime = 0;
+    collapseDrugRecommendation(drugId);
+    return;
+  }
+
+  lastClickDrugId = drugId;
+  lastClickTime = now;
+
+  if (pendingClickTimer) clearTimeout(pendingClickTimer);
+  pendingClickTimer = setTimeout(() => {
+    pendingClickTimer = null;
+    requestRecommendation(drugId);
+  }, DOUBLE_CLICK_MS);
+}
+
+function createDrugItemElement(drug) {
+  const item = document.createElement("div");
+  item.className = "drug-item";
+  item.dataset.drugId = drug.id;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "drug-name-btn";
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    handleDrugNameClick(drug.id);
+  });
+
+  const recBlock = document.createElement("div");
+  recBlock.className = "drug-recommendation hidden";
+
+  const recText = document.createElement("p");
+  recText.className = "recommendation-text";
+  recBlock.appendChild(recText);
+
+  item.appendChild(btn);
+  item.appendChild(recBlock);
+  syncDrugItemElement(item, drug);
+  return item;
+}
+
+function renderDrugList() {
+  drugList.innerHTML = "";
+  for (const drug of scannedDrugs) {
+    drugList.appendChild(createDrugItemElement(drug));
+  }
+}
+
+function appendDrug(drug) {
+  scannedDrugs.push(drug);
+  renderDrugList();
+  const el = drugList.querySelector(`[data-drug-id="${drug.id}"]`);
+  el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function applyCachedDrugClick(drug) {
+  activeDrugId = drug.id;
+  renderDrugList();
+  if (drug.recommendation) {
+    writeClipboard(drug.recommendation);
+  }
+}
+
+async function handleLookupResult(lookupResult, barcode) {
+  hideManualEntryRow();
+
+  const existing = findDrugByBarcode(barcode);
+  if (existing) {
+    highlightDrugRow(existing.id);
+    setOrbState("success");
+    triggerFlash();
+    setTimeout(() => setOrbState("idle"), 400);
+    if (!sidebarOpen) await openSidebar();
+    else await resizeWindow("sidebar");
+    return;
+  }
+
+  if (lookupResult.found) {
+    const drug = createDrugEntry(lookupResult, barcode);
+    appendDrug(drug);
+    if (!sidebarOpen) await openSidebar();
+    else await resizeWindow("sidebar");
+    setOrbState("success");
+    triggerFlash();
+    setTimeout(() => setOrbState("idle"), 400);
+    return;
+  }
+
+  if (!sidebarOpen) await openSidebar();
+  showManualEntryRow(barcode, lookupResult.miss_reason || "");
+  await resizeWindow("sidebar");
+  setOrbState("idle");
+}
+
+function addManualDrugFromInput() {
+  const name = manualNameInput.value.trim();
+  if (!name) {
+    manualNameInput.focus();
+    return null;
+  }
+
+  const barcode = pendingManualBarcode || lastAcceptedBarcode || MANUAL_ENTRY_BARCODE;
+  const existing = scannedDrugs.find(
+    (d) => d.barcode === barcode && d.productName.toLowerCase() === name.toLowerCase(),
+  );
+  if (existing) {
+    hideManualEntryRow();
+    highlightDrugRow(existing.id);
+    return existing;
+  }
+
+  const drug = {
+    id: createDrugId(),
+    barcode,
+    found: false,
+    productName: name,
+    activeIngredient: "",
+    atcCode: "",
+    recommendation: null,
+    errorMessage: null,
+    status: "idle",
+  };
+  appendDrug(drug);
+  hideManualEntryRow();
+  return drug;
 }
 
 async function openManualEntry() {
   if (processing) return;
 
-  if (previewOpen && pendingLookup && !pendingLookup.found) {
+  if (sidebarOpen && !manualEntryRow.classList.contains("hidden")) {
     manualNameInput.focus();
     return;
   }
 
-  if (panelOpen) await collapsePanel();
-  if (previewOpen) await collapsePreview();
-
-  const barcode = lastAcceptedBarcode || MANUAL_ENTRY_BARCODE;
-  await showPreview(
-    { found: false, product_name: null, active_ingredient: null, atc_code: null },
-    barcode,
-  );
-  previewStatus.textContent = "Πληκτρολογήστε όνομα φαρμάκου";
-  previewLookupDetail.classList.add("hidden");
-  previewLookupDetail.textContent = "";
-  if (!lastAcceptedBarcode) {
-    previewBarcode.textContent = "—";
-  }
-}
-
-// ── Step 2: Recommendation panel ──
-
-async function showPanel(mode, data) {
-  previewPanel.classList.remove("visible");
-  previewPanel.classList.add("hidden");
-  previewOpen = false;
-
-  responsePanel.classList.remove("hidden", "error-border", "visible");
-  void responsePanel.offsetWidth;
-  responsePanel.classList.add("visible");
-
-  if (mode === "error") {
-    responsePanel.classList.add("error-border");
-    statusMessage.textContent = data.errorMessage || "Σφάλμα";
-    productName.textContent = "Σφάλμα αναζήτησης";
-    recommendationText.textContent = data.rawResponse || data.errorMessage || "";
-  } else {
-    responsePanel.classList.remove("error-border");
-    const profile = await invoke("get_profile");
-    statusMessage.textContent = profile === "TEST" ? "Ολοκληρώθηκε (TEST)" : "Ολοκληρώθηκε";
-    productName.textContent = data.productName || "";
-    recommendationText.textContent = data.recommendation || "";
+  if (!sidebarOpen) {
+    await openSidebar();
   }
 
-  barcodeDisplay.textContent = data.barcode || "";
-  panelOpen = true;
+  showManualEntryRow(lastAcceptedBarcode || MANUAL_ENTRY_BARCODE, "");
+  await resizeWindow("sidebar");
 }
 
-async function collapsePanel() {
-  responsePanel.classList.remove("visible");
-  responsePanel.classList.add("hidden");
-  panelOpen = false;
-  await resizeWindow("collapsed");
-}
-
-async function handleSuccess(barcode, result) {
-  currentRecommendation = result.recommendation || "";
-  await writeClipboard(currentRecommendation);
-
-  setOrbState("success");
-  triggerFlash();
-
-  await resizeWindow("success");
-  await showPanel("success", {
-    barcode,
-    productName: result.product_name,
-    recommendation: result.recommendation,
-  });
-
-  setTimeout(() => setOrbState("idle"), 400);
-}
-
-async function handleError(barcode, result) {
+async function showScanError(errorMessage) {
   setOrbState("error");
   triggerFlash();
-
-  await resizeWindow("error");
-  await showPanel("error", {
-    barcode,
-    errorMessage: result.error_message || "Σφάλμα",
-    rawResponse: result.raw_response || "",
-  });
-
   setTimeout(() => setOrbState("idle"), 650);
+  console.error("[Scan] Error:", errorMessage);
 }
 
-// ── Phase 1: Scan → Lookup → Preview ──
-
-async function processBarcode(rawBarcode) {
+async function requestRecommendation(drugId) {
   if (processing) return;
 
-  updateOrbScanDisplay(rawBarcode, "pending");
+  const drug = findDrugById(drugId);
+  if (!drug) return;
 
-  const normalized = normalizeBarcodeInput(rawBarcode);
-  if (!normalized.ok) {
-    console.log("[Scan] Rejected:", normalized);
-    updateOrbScanDisplay(rawBarcode, "error", normalized.barcode || normalized.debugInfo);
-    await handleError(normalized.barcode, buildUiError(normalized.errorMessage, normalized.debugInfo));
+  activeDrugId = drugId;
+
+  if (drug.status === "done" && drug.recommendation) {
+    applyCachedDrugClick(drug);
     return;
   }
 
-  const barcode = normalized.barcode;
-  lastAcceptedBarcode = barcode;
-  updateOrbScanDisplay(rawBarcode, "ok", barcode);
-  console.log(`[Scan] Accepted: ${barcode}`);
-
-  try {
-    if (previewOpen) await collapsePreview();
-    if (panelOpen) await collapsePanel();
-
-    setOrbState("thinking");
-
-    const lookupResult = await invoke("lookup_barcode", { barcode });
-    console.log("[Lookup] Result:", lookupResult);
-    if (!lookupResult.found) {
-      console.log("[Lookup] Miss reason:", lookupResult.miss_reason || "(none)");
-    }
-    await showPreview(lookupResult, barcode);
-  } catch (err) {
-    console.error("[Lookup] Exception:", err);
-    await handleError(barcode, buildUiError(String(err)));
-  }
-}
-
-// ── Phase 2: Click "Πρόταση" → AI Recommendation ──
-
-async function requestRecommendation() {
-  if (processing || !pendingLookup) return;
-
-  const { barcode, found } = pendingLookup;
-  let finalProductName = pendingLookup.productName;
-
-  if (!found) {
-    finalProductName = manualNameInput.value.trim();
-    if (!finalProductName) {
-      manualNameInput.focus();
-      return;
-    }
+  if (drug.status === "error" && drug.errorMessage) {
+    renderDrugList();
+    return;
   }
 
   processing = true;
-  console.log(`[Recommend] barcode=${barcode} product_name="${finalProductName}"`);
+  drug.status = "loading";
+  renderDrugList();
+  setOrbState("thinking");
+
+  console.log(`[Recommend] barcode=${drug.barcode} product_name="${drug.productName}"`);
 
   try {
-    previewPanel.classList.remove("visible");
-    previewPanel.classList.add("hidden");
-    previewOpen = false;
-
-    setOrbState("thinking");
-    await resizeWindow("collapsed");
-
     let timeoutId;
     const result = await Promise.race([
       invoke("get_recommendation", {
-        barcode,
-        productName: finalProductName || null,
+        barcode: drug.barcode,
+        productName: drug.productName || null,
       }),
       new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
@@ -566,37 +684,90 @@ async function requestRecommendation() {
     if (timeoutId) clearTimeout(timeoutId);
 
     if (result?.success) {
-      await handleSuccess(barcode, result);
+      drug.recommendation = result.recommendation || "";
+      drug.errorMessage = null;
+      drug.status = "done";
+      if (result.product_name && !drug.productName) {
+        drug.productName = result.product_name;
+      }
+      await writeClipboard(drug.recommendation);
+      setOrbState("success");
+      triggerFlash();
+      setTimeout(() => setOrbState("idle"), 400);
     } else {
       const msg = result?.error_message || result?.message || PRODUCT_NOT_FOUND_MESSAGE;
-      await handleError(barcode, buildUiError(msg, result?.raw_response || ""));
+      drug.errorMessage = result?.raw_response || msg;
+      drug.recommendation = null;
+      drug.status = "error";
+      setOrbState("error");
+      triggerFlash();
+      setTimeout(() => setOrbState("idle"), 650);
     }
   } catch (err) {
     console.error("[Recommend] Exception:", err);
     const errText = String(err ?? "");
     const message = isNetworkErrorMessage(errText) ? NETWORK_ERROR_MESSAGE : errText || NETWORK_ERROR_MESSAGE;
-    await handleError(barcode, buildUiError(message, "Ελέγξτε σύνδεση, firewall ή πρόσβαση στο Supabase."));
+    drug.errorMessage = message;
+    drug.recommendation = null;
+    drug.status = "error";
+    setOrbState("error");
+    triggerFlash();
+    setTimeout(() => setOrbState("idle"), 650);
   } finally {
     processing = false;
-    pendingLookup = null;
+    renderDrugList();
+    await resizeWindow("sidebar");
   }
 }
 
-// ── Setup ──
+async function processBarcode(rawBarcode) {
+  if (lookupInFlight) return;
+
+  updateOrbScanDisplay(rawBarcode, "pending");
+
+  const normalized = normalizeBarcodeInput(rawBarcode);
+  if (!normalized.ok) {
+    console.log("[Scan] Rejected:", normalized);
+    updateOrbScanDisplay(rawBarcode, "error", normalized.barcode || normalized.debugInfo);
+    await showScanError(normalized.errorMessage);
+    return;
+  }
+
+  const barcode = normalized.barcode;
+  lastAcceptedBarcode = barcode;
+  updateOrbScanDisplay(rawBarcode, "ok", barcode);
+  console.log(`[Scan] Accepted: ${barcode}`);
+
+  lookupInFlight = true;
+  try {
+    setOrbState("thinking");
+
+    const lookupResult = await invoke("lookup_barcode", { barcode });
+    console.log("[Lookup] Result:", lookupResult);
+    if (!lookupResult.found) {
+      console.log("[Lookup] Miss reason:", lookupResult.miss_reason || "(none)");
+    }
+    await handleLookupResult(lookupResult, barcode);
+  } catch (err) {
+    console.error("[Lookup] Exception:", err);
+    await showScanError(String(err));
+  } finally {
+    lookupInFlight = false;
+  }
+}
 
 function setupDrag() {
   document.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     const target = e.target;
-    if (target.closest("#close-panel-btn")) return;
-    if (target.closest("#preview-close-btn")) return;
-    if (target.closest("#copy-btn")) return;
-    if (target.closest("#recommend-btn")) return;
+    if (target.closest("#sidebar-close-btn")) return;
     if (target.closest("#profile-badge")) return;
     if (target.closest(".orb-chrome-btn")) return;
-    if (target.closest("#recommendation-scroll")) return;
     if (target.closest("#scan-fallback")) return;
     if (target.closest("#manual-name-input")) return;
+    if (target.closest(".drug-name-btn")) return;
+    if (target.closest(".drug-recommendation")) return;
+    if (target.closest(".drug-list")) return;
 
     if (target.closest("[data-drag-region]")) {
       e.preventDefault();
@@ -606,32 +777,18 @@ function setupDrag() {
 }
 
 function setupPanelControls() {
-  $("close-panel-btn").addEventListener("click", (e) => {
+  $("sidebar-close-btn").addEventListener("click", (e) => {
     e.stopPropagation();
-    collapsePanel();
-  });
-
-  $("preview-close-btn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    collapsePreview();
-  });
-
-  $("copy-btn").addEventListener("click", async (e) => {
-    e.stopPropagation();
-    if (!currentRecommendation) return;
-    await writeClipboard(currentRecommendation);
-    statusMessage.textContent = "Αντιγράφηκε στο πρόχειρο";
-  });
-
-  recommendBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    requestRecommendation();
+    collapseSidebar();
   });
 
   manualNameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      requestRecommendation();
+      const drug = addManualDrugFromInput();
+      if (drug) {
+        resizeWindow("sidebar").then(() => requestRecommendation(drug.id));
+      }
     }
   });
 }
@@ -657,14 +814,16 @@ function setupWindowChrome() {
 }
 
 function setupProfileBadge() {
-  profileBadge.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    const name = await invoke("toggle_profile");
-    updateProfileBadge(name);
-  });
+  // UI hidden — re-enable with #profile-badge in index.html
+  // profileBadge.addEventListener("click", async (e) => {
+  //   e.stopPropagation();
+  //   const name = await invoke("toggle_profile");
+  //   updateProfileBadge(name);
+  // });
 }
 
 function updateProfileBadge(name) {
+  if (!profileBadge) return;
   profileBadge.textContent = name;
   profileBadge.classList.toggle("prod", name === "PROD");
 }
@@ -688,8 +847,9 @@ async function init() {
   setupProfileBadge();
   setupScanFallback();
 
-  const profile = await invoke("get_profile");
-  updateProfileBadge(profile);
+  // Profile badge hidden — default profile is PROD (env_config.rs)
+  // const profile = await invoke("get_profile");
+  // updateProfileBadge(profile);
 
   await listen("barcode-scanned", (event) => {
     console.log("[Hook] barcode-scanned event:", event.payload);
@@ -700,14 +860,15 @@ async function init() {
     const payload = event.payload || {};
     console.log("[Hook] scan-attempt:", payload);
     if (payload.accepted === false) {
-      updateOrbScanDisplay(payload.raw || "", "error", payload.reason || "");
+      // updateOrbScanDisplay(payload.raw || "", "error", payload.reason || "");
     }
   });
 
-  await listen("hook-buffer", (event) => {
-    console.log("[Hook] hook-buffer:", event.payload);
-    updateOrbHookBuffer(event.payload || {});
-  });
+  // Debug: hook-buffer UI hidden — re-enable with #orb-hook-buffer in index.html
+  // await listen("hook-buffer", (event) => {
+  //   console.log("[Hook] hook-buffer:", event.payload);
+  //   updateOrbHookBuffer(event.payload || {});
+  // });
 
   setOrbState("idle");
   await resizeWindow("collapsed");

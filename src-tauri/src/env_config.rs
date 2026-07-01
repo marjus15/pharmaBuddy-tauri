@@ -172,7 +172,7 @@ fn load_profile() -> AppProfile {
         }
     }
 
-    AppProfile::Test
+    AppProfile::Prod
 }
 
 fn save_profile(profile: AppProfile) {

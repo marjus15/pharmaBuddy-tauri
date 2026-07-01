@@ -19,78 +19,31 @@
     <div id="app-root" class="app-root">
       <div id="main-layout" class="main-layout">
 
-        <!-- Step 1: Name preview panel (shown after scan / lookup) -->
         <div
-          id="preview-panel"
-          class="response-panel hidden"
+          id="drug-sidebar"
+          class="drug-sidebar hidden"
           data-drag-region
         >
-          <div class="panel-header" data-drag-region>
-            <div class="panel-header-left" data-drag-region>
-              <span class="drag-handle" title="Σύρετε για μετακίνηση">⠿</span>
-              <span class="status-dot"></span>
-              <span id="preview-status" class="status-message">Βρέθηκε</span>
-            </div>
-            <button
-              id="preview-close-btn"
-              class="close-btn"
-              type="button"
-              title="Απόκρυψη"
-            >
-              ✕
-            </button>
-          </div>
+          <button
+            id="sidebar-close-btn"
+            class="sidebar-close-btn"
+            type="button"
+            title="Απόκρυψη"
+          >
+            ✕
+          </button>
 
-          <h2 id="preview-product-name" class="product-name"></h2>
+          <div id="drug-list" class="drug-list"></div>
 
-          <input
-            id="manual-name-input"
-            class="manual-name-input hidden"
-            type="text"
-            placeholder="Πληκτρολογήστε το όνομα φαρμάκου"
-            autocomplete="off"
-          />
-
-          <p id="preview-lookup-detail" class="lookup-detail hidden"></p>
-
-          <div class="panel-footer">
-            <span id="preview-barcode" class="barcode-display"></span>
-            <button id="recommend-btn" class="recommend-btn" type="button">Πρόταση</button>
-          </div>
-        </div>
-
-        <!-- Step 2: Recommendation panel (shown after AI call) -->
-        <div
-          id="response-panel"
-          class="response-panel hidden"
-          data-drag-region
-        >
-          <div class="panel-header" data-drag-region>
-            <div class="panel-header-left" data-drag-region>
-              <span class="drag-handle" title="Σύρετε για μετακίνηση">⠿</span>
-              <span class="status-dot"></span>
-              <span id="status-message" class="status-message">Ολοκληρώθηκε</span>
-            </div>
-            <button
-              id="close-panel-btn"
-              class="close-btn"
-              type="button"
-              title="Απόκρυψη κάρτας"
-            >
-              ✕
-            </button>
-          </div>
-
-          <h2 id="product-name" class="product-name"></h2>
-          <div class="panel-divider"></div>
-
-          <div id="recommendation-scroll" class="recommendation-scroll">
-            <p id="recommendation-text" class="recommendation-text"></p>
-          </div>
-
-          <div class="panel-footer">
-            <span id="barcode-display" class="barcode-display"></span>
-            <button id="copy-btn" class="copy-btn" type="button">Αντιγραφή</button>
+          <div id="manual-entry-row" class="manual-entry-row hidden">
+            <input
+              id="manual-name-input"
+              class="manual-name-input"
+              type="text"
+              placeholder="Όνομα φαρμάκου"
+              autocomplete="off"
+            />
+            <p id="sidebar-lookup-detail" class="lookup-detail hidden"></p>
           </div>
         </div>
 
@@ -133,7 +86,7 @@
               class="orb state-idle"
               data-drag-region
               role="img"
-              aria-label="AI Signal Orb"
+              aria-label="pharmaBuddy"
             >
             <div class="radar-host">
               <div class="layer vignette"></div>
@@ -179,17 +132,23 @@
           </div>
 
           <div class="orb-footer" data-drag-region>
-            <p id="orb-label" class="orb-label">AI SIGNAL</p>
+            <p id="orb-label" class="orb-label">PharmaBuddy AI</p>
+            <!-- Debug: last scan status (hidden — re-enable for scanner troubleshooting)
             <p id="orb-scan-display" class="orb-scan-display" title="Τελευταίο scan">—</p>
+            -->
+            <!-- Debug: live keyboard hook buffer (hidden — re-enable for scanner troubleshooting)
             <p id="orb-hook-buffer" class="orb-hook-buffer" title="Live hook buffer">HOOK[0]: —</p>
+            -->
+            <!-- Profile badge hidden — app runs PROD by default (see env_config.rs)
             <button
               id="profile-badge"
               class="profile-badge"
               type="button"
               title="Εναλλαγή TEST / PROD"
             >
-              TEST
+              PROD
             </button>
+            -->
           </div>
         </div>
       </div>
