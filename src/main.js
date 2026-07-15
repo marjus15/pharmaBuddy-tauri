@@ -75,6 +75,7 @@ const INVALID_SCAN_FORMAT_MESSAGE = "Μη έγκυρη μορφή barcode.";
 const NETWORK_ERROR_MESSAGE =
   "Αποτυχία σύνδεσης με Supabase. Ελέγξτε δίκτυο ή firewall και δοκιμάστε ξανά.";
 const PRODUCT_NOT_FOUND_MESSAGE = "Το προϊόν δεν βρέθηκε στη βάση δεδομένων.";
+const LOOKUP_NO_RESULTS_MESSAGE = "Δεν βρέθηκαν αποτελέσματα.";
 const LICENSE_INACTIVE_MESSAGE =
   "Η άδεια χρήσης δεν είναι ενεργή. Επικοινωνήστε μαζί μας.";
 const LICENSE_RECONNECT_MESSAGE =
@@ -554,9 +555,9 @@ function showManualEntryRow(barcode, missReason = "") {
   manualEntryRow.classList.remove("hidden");
   manualNameInput.value = "";
   if (missReason) {
-    sidebarLookupDetail.textContent = missReason;
+    sidebarLookupDetail.textContent = LOOKUP_NO_RESULTS_MESSAGE;
     sidebarLookupDetail.classList.remove("hidden");
-    sidebarLookupDetail.title = missReason;
+    sidebarLookupDetail.title = "";
   } else {
     sidebarLookupDetail.classList.add("hidden");
     sidebarLookupDetail.textContent = "";
