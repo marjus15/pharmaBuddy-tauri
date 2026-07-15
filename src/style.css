@@ -978,3 +978,110 @@ body {
   --ring-speed-b: 1.4s;
   --pulse-duration: 0.4s;
 }
+
+/* ── Activation overlay ── */
+.activation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 10, 18, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.activation-overlay.hidden {
+  display: none;
+}
+
+.activation-panel {
+  width: min(280px, calc(100% - 24px));
+  padding: 16px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 232, 255, 0.35);
+  background: rgba(8, 14, 24, 0.92);
+  box-shadow: 0 0 24px rgba(0, 232, 255, 0.15);
+}
+
+.activation-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #00e8ff;
+  text-align: center;
+}
+
+.activation-desc {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #c8d8f0;
+  text-align: center;
+}
+
+.activation-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 232, 255, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f4faff;
+  font-size: 13px;
+  font-family: Consolas, "Courier New", monospace;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.activation-input:focus {
+  outline: none;
+  border-color: rgba(0, 232, 255, 0.6);
+  box-shadow: 0 0 0 2px rgba(0, 232, 255, 0.15);
+}
+
+.activation-error {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #ff6b7e;
+  text-align: center;
+}
+
+.activation-error.hidden {
+  display: none;
+}
+
+.activation-btn {
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #00e8ff 0%, #00a8d8 100%);
+  color: #041018;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.activation-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.orb-pharmacy-name {
+  margin: 2px 0 0;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: rgba(0, 232, 255, 0.75);
+  text-align: center;
+}
+
+.orb-pharmacy-name.hidden {
+  display: none;
+}

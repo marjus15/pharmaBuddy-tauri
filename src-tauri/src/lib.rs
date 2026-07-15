@@ -5,8 +5,10 @@ mod commercial_registry;
 mod env_config;
 mod eprescription;
 mod galinos;
+mod pharmacy_config;
 mod recommendation;
 
+use pharmacy_config::PharmacyStatus;
 use recommendation::RecommendationDto;
 use tauri::Manager;
 
@@ -28,6 +30,16 @@ fn get_profile() -> String {
 #[tauri::command]
 fn toggle_profile() -> String {
     env_config::toggle_profile().display_name().to_string()
+}
+
+#[tauri::command]
+async fn get_pharmacy_status() -> PharmacyStatus {
+    pharmacy_config::get_pharmacy_status().await
+}
+
+#[tauri::command]
+async fn activate_pharmacy(license_key: String) -> Result<PharmacyStatus, String> {
+    pharmacy_config::activate_pharmacy(license_key).await
 }
 
 #[cfg(target_os = "windows")]
@@ -75,7 +87,9 @@ pub fn run() {
             get_recommendation,
             lookup_barcode,
             get_profile,
-            toggle_profile
+            toggle_profile,
+            get_pharmacy_status,
+            activate_pharmacy
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

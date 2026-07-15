@@ -4,6 +4,7 @@ use crate::commercial_registry;
 use crate::env_config::{self, AppProfile};
 use crate::eprescription;
 use crate::galinos;
+use crate::pharmacy_config;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -243,9 +244,11 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
         }
     };
 
+    let pharmacy_id = pharmacy_config::get_pharmacy_id().unwrap_or_default();
+
     let payload = serde_json::json!({
         "barcode": barcode,
-        "pharmacy_id": "",
+        "pharmacy_id": pharmacy_id,
         "lookup_only": true
     });
 
@@ -276,6 +279,10 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
     env_config::app_log(&format!("[Lookup] Response: {body}"));
 
     if !status.is_success() {
+        if status.as_u16() == 403 && pharmacy_config::is_license_inactive_error(&body) {
+            pharmacy_config::clear_config();
+            return lookup_miss("Η άδεια χρήσης δεν είναι ενεργή. Επικοινωνήστε μαζί μας.");
+        }
         return lookup_miss(format!(
             "Supabase HTTP {} — {}",
             status.as_u16(),
@@ -409,9 +416,11 @@ async fn get_prod_recommendation(barcode: &str, product_name: Option<&str>) -> R
         }
     };
 
+    let pharmacy_id = pharmacy_config::get_pharmacy_id().unwrap_or_default();
+
     let mut payload = serde_json::json!({
         "barcode": barcode,
-        "pharmacy_id": ""
+        "pharmacy_id": pharmacy_id
     });
     if let Some(name) = product_name {
         payload["product_name"] = serde_json::Value::String(name.to_string());
@@ -452,6 +461,18 @@ async fn get_prod_recommendation(barcode: &str, product_name: Option<&str>) -> R
     env_config::app_log(&format!("[Prod] Body: {body}"));
 
     if !status.is_success() {
+        if status.as_u16() == 403 && pharmacy_config::is_license_inactive_error(&body) {
+            pharmacy_config::clear_config();
+            return RecommendationDto {
+                success: false,
+                product_name: None,
+                recommendation: None,
+                error_message: Some(
+                    "Η άδεια χρήσης δεν είναι ενεργή. Επικοινωνήστε μαζί μας.".into(),
+                ),
+                raw_response: Some(body),
+            };
+        }
         return RecommendationDto {
             success: false,
             product_name: None,

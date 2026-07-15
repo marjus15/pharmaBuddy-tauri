@@ -29,10 +29,20 @@ const profileBadge = $("profile-badge");
 const scanFallback = $("scan-fallback");
 const orbScanDisplay = $("orb-scan-display");
 const orbHookBuffer = $("orb-hook-buffer");
+const activationOverlay = $("activation-overlay");
+const activationKeyInput = $("activation-key-input");
+const activationSubmitBtn = $("activation-submit-btn");
+const activationError = $("activation-error");
+const activationDesc = $("activation-desc");
+const orbPharmacyName = $("orb-pharmacy-name");
 
 let lastHookBuffer = "";
 let lastAcceptedBarcode = "";
 let pendingManualBarcode = "";
+
+let pharmacyActivated = false;
+let pharmacyLicenseValid = false;
+let activationMode = "activate";
 
 const MANUAL_ENTRY_BARCODE = "manual-entry";
 
@@ -65,6 +75,161 @@ const INVALID_SCAN_FORMAT_MESSAGE = "Μη έγκυρη μορφή barcode.";
 const NETWORK_ERROR_MESSAGE =
   "Αποτυχία σύνδεσης με Supabase. Ελέγξτε δίκτυο ή firewall και δοκιμάστε ξανά.";
 const PRODUCT_NOT_FOUND_MESSAGE = "Το προϊόν δεν βρέθηκε στη βάση δεδομένων.";
+const LICENSE_INACTIVE_MESSAGE =
+  "Η άδεια χρήσης δεν είναι ενεργή. Επικοινωνήστε μαζί μας.";
+const LICENSE_RECONNECT_MESSAGE =
+  "Απαιτείται σύνδεση στο διαδίκτυο για επαλήθευση της άδειας.";
+
+function showActivationError(message) {
+  if (!activationError) return;
+  activationError.textContent = message;
+  activationError.classList.remove("hidden");
+}
+
+function clearActivationError() {
+  if (!activationError) return;
+  activationError.textContent = "";
+  activationError.classList.add("hidden");
+}
+
+function updatePharmacyFooter(businessName) {
+  if (!orbPharmacyName) return;
+  if (businessName) {
+    orbPharmacyName.textContent = businessName;
+    orbPharmacyName.classList.remove("hidden");
+  } else {
+    orbPharmacyName.textContent = "";
+    orbPharmacyName.classList.add("hidden");
+  }
+}
+
+function showActivationOverlay(mode = "activate") {
+  if (!activationOverlay) return;
+  activationMode = mode;
+  pharmacyActivated = false;
+  pharmacyLicenseValid = false;
+  activationOverlay.classList.remove("hidden");
+  activationOverlay.setAttribute("aria-hidden", "false");
+  if (activationDesc) {
+    activationDesc.textContent =
+      mode === "reconnect"
+        ? LICENSE_RECONNECT_MESSAGE
+        : mode === "inactive"
+          ? LICENSE_INACTIVE_MESSAGE
+          : "Εισάγετε τον κωδικό ενεργοποίησης από τη σελίδα εγγραφής.";
+  }
+  if (activationKeyInput) {
+    activationKeyInput.value = "";
+    activationKeyInput.disabled = mode === "reconnect";
+  }
+  if (activationSubmitBtn) {
+    activationSubmitBtn.disabled = mode === "reconnect";
+    activationSubmitBtn.textContent =
+      mode === "reconnect" ? "Επανάληψη" : "Ενεργοποίηση";
+  }
+  clearActivationError();
+}
+
+function hideActivationOverlay() {
+  if (!activationOverlay) return;
+  activationOverlay.classList.add("hidden");
+  activationOverlay.setAttribute("aria-hidden", "true");
+  clearActivationError();
+}
+
+function applyPharmacyStatus(status) {
+  pharmacyActivated = Boolean(status?.activated);
+  pharmacyLicenseValid =
+    pharmacyActivated && status?.license_valid !== false && !status?.needs_reconnect;
+
+  if (!pharmacyActivated) {
+    showActivationOverlay("activate");
+    updatePharmacyFooter(null);
+    return;
+  }
+
+  if (!pharmacyLicenseValid) {
+    const mode = status?.needs_reconnect ? "reconnect" : "inactive";
+    showActivationOverlay(mode);
+    if (status?.lock_reason) showActivationError(status.lock_reason);
+    updatePharmacyFooter(status?.business_name || null);
+    return;
+  }
+
+  hideActivationOverlay();
+  updatePharmacyFooter(status?.business_name || null);
+}
+
+async function submitActivation() {
+  if (!activationSubmitBtn) return;
+
+  if (activationMode === "reconnect") {
+    clearActivationError();
+    activationSubmitBtn.disabled = true;
+    try {
+      const status = await invoke("get_pharmacy_status");
+      applyPharmacyStatus(status);
+      if (!pharmacyLicenseValid && status?.lock_reason) {
+        showActivationError(status.lock_reason);
+      }
+    } catch (err) {
+      showActivationError(String(err));
+    } finally {
+      activationSubmitBtn.disabled = false;
+    }
+    return;
+  }
+
+  if (!activationKeyInput) return;
+  const licenseKey = activationKeyInput.value.trim();
+  if (!licenseKey) {
+    showActivationError("Εισάγετε τον κωδικό ενεργοποίησης.");
+    return;
+  }
+
+  clearActivationError();
+  activationSubmitBtn.disabled = true;
+  try {
+    const status = await invoke("activate_pharmacy", { licenseKey });
+    applyPharmacyStatus(status);
+    if (!pharmacyLicenseValid && status?.lock_reason) {
+      showActivationError(status.lock_reason);
+    }
+  } catch (err) {
+    showActivationError(String(err));
+  } finally {
+    activationSubmitBtn.disabled = false;
+  }
+}
+
+function setupActivationOverlay() {
+  if (!activationSubmitBtn) return;
+  activationSubmitBtn.addEventListener("click", () => {
+    void submitActivation();
+  });
+  if (activationKeyInput) {
+    activationKeyInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void submitActivation();
+      }
+    });
+  }
+}
+
+async function checkPharmacyOnStartup() {
+  try {
+    const status = await invoke("get_pharmacy_status");
+    applyPharmacyStatus(status);
+  } catch (err) {
+    console.error("[Pharmacy] status check failed:", err);
+    showActivationOverlay("activate");
+  }
+}
+
+function isLicenseInactiveMessage(message) {
+  return String(message || "").includes("άδεια χρήσης δεν είναι ενεργή");
+}
 
 function buildUiError(errorMessage, rawResponse = "") {
   return {
@@ -559,6 +724,13 @@ function applyCachedDrugClick(drug) {
 async function handleLookupResult(lookupResult, barcode) {
   hideManualEntryRow();
 
+  if (isLicenseInactiveMessage(lookupResult.miss_reason)) {
+    const status = await invoke("get_pharmacy_status");
+    applyPharmacyStatus(status);
+    setOrbState("error");
+    return;
+  }
+
   const existing = findDrugByBarcode(barcode);
   if (existing) {
     highlightDrugRow(existing.id);
@@ -696,6 +868,17 @@ async function requestRecommendation(drugId) {
       setTimeout(() => setOrbState("idle"), 400);
     } else {
       const msg = result?.error_message || result?.message || PRODUCT_NOT_FOUND_MESSAGE;
+      if (isLicenseInactiveMessage(msg) || isLicenseInactiveMessage(result?.raw_response)) {
+        const status = await invoke("get_pharmacy_status");
+        applyPharmacyStatus(status);
+        drug.errorMessage = LICENSE_INACTIVE_MESSAGE;
+        drug.recommendation = null;
+        drug.status = "error";
+        setOrbState("error");
+        triggerFlash();
+        setTimeout(() => setOrbState("idle"), 650);
+        return;
+      }
       drug.errorMessage = result?.raw_response || msg;
       drug.recommendation = null;
       drug.status = "error";
@@ -721,6 +904,7 @@ async function requestRecommendation(drugId) {
 }
 
 async function processBarcode(rawBarcode) {
+  if (!pharmacyActivated || !pharmacyLicenseValid) return;
   if (lookupInFlight) return;
 
   updateOrbScanDisplay(rawBarcode, "pending");
@@ -765,6 +949,8 @@ function setupDrag() {
     if (target.closest(".orb-chrome-btn")) return;
     if (target.closest("#scan-fallback")) return;
     if (target.closest("#manual-name-input")) return;
+    if (target.closest("#activation-key-input")) return;
+    if (target.closest("#activation-submit-btn")) return;
     if (target.closest(".drug-name-btn")) return;
     if (target.closest(".drug-recommendation")) return;
     if (target.closest(".drug-list")) return;
@@ -846,6 +1032,9 @@ async function init() {
   setupPanelControls();
   setupProfileBadge();
   setupScanFallback();
+  setupActivationOverlay();
+
+  await checkPharmacyOnStartup();
 
   // Profile badge hidden — default profile is PROD (env_config.rs)
   // const profile = await invoke("get_profile");

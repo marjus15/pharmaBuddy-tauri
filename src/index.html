@@ -17,6 +17,31 @@
     />
 
     <div id="app-root" class="app-root">
+      <div
+        id="activation-overlay"
+        class="activation-overlay hidden"
+        aria-hidden="true"
+      >
+        <div class="activation-panel">
+          <p class="activation-title">Ενεργοποίηση PharmaBuddy</p>
+          <p id="activation-desc" class="activation-desc">
+            Εισάγετε τον κωδικό ενεργοποίησης από τη σελίδα εγγραφής.
+          </p>
+          <input
+            id="activation-key-input"
+            class="activation-input"
+            type="text"
+            placeholder="PB-XXXX-XXXX"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p id="activation-error" class="activation-error hidden"></p>
+          <button id="activation-submit-btn" class="activation-btn" type="button">
+            Ενεργοποίηση
+          </button>
+        </div>
+      </div>
+
       <div id="main-layout" class="main-layout">
 
         <div
@@ -133,6 +158,7 @@
 
           <div class="orb-footer" data-drag-region>
             <p id="orb-label" class="orb-label">PharmaBuddy AI</p>
+            <p id="orb-pharmacy-name" class="orb-pharmacy-name hidden"></p>
             <!-- Debug: last scan status (hidden — re-enable for scanner troubleshooting)
             <p id="orb-scan-display" class="orb-scan-display" title="Τελευταίο scan">—</p>
             -->
