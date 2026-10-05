@@ -49,14 +49,38 @@ pub fn schedule_catalog_cache_with_source(
     product_name: String,
     source: &str,
 ) {
+    schedule_catalog_facts(barcode, product_name, source, None, None, None);
+}
+
+/// Writes a catalog row and, when the barcode already exists, merges missing metadata
+/// such as the SPC side-effect excerpt.
+pub fn schedule_catalog_facts(
+    barcode: String,
+    product_name: String,
+    source: &str,
+    active_ingredient: Option<String>,
+    atc_code: Option<String>,
+    side_effects: Option<String>,
+) {
     if !catalog_cache_enabled() {
         return;
     }
 
     let source = source.to_string();
-    put_session_cached(&barcode, &product_name);
+    if !product_name.trim().is_empty() {
+        put_session_cached(&barcode, &product_name);
+    }
     tokio::spawn(async move {
-        match write_catalog_entry(&barcode, &product_name, &source).await {
+        match write_catalog_entry(
+            &barcode,
+            &product_name,
+            &source,
+            active_ingredient.as_deref(),
+            atc_code.as_deref(),
+            side_effects.as_deref(),
+        )
+        .await
+        {
             Ok(cached) => {
                 env_config::app_log(&format!(
                     "[Cache] {barcode} → {}",
@@ -70,16 +94,32 @@ pub fn schedule_catalog_cache_with_source(
     });
 }
 
-async fn write_catalog_entry(barcode: &str, product_name: &str, source: &str) -> Result<bool, String> {
+async fn write_catalog_entry(
+    barcode: &str,
+    product_name: &str,
+    source: &str,
+    active_ingredient: Option<&str>,
+    atc_code: Option<&str>,
+    side_effects: Option<&str>,
+) -> Result<bool, String> {
     let url = cache_catalog_url().ok_or_else(|| "Missing SUPABASE_FUNCTIONS_URL".to_string())?;
     let anon_key =
         env_config::get_env("SUPABASE_ANON_KEY").ok_or_else(|| "Missing SUPABASE_ANON_KEY".to_string())?;
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "barcode": barcode,
         "product_name": product_name,
         "source": source
     });
+    if let Some(value) = active_ingredient.map(str::trim).filter(|v| !v.is_empty()) {
+        payload["active_ingredient"] = serde_json::Value::String(value.to_string());
+    }
+    if let Some(value) = atc_code.map(str::trim).filter(|v| !v.is_empty()) {
+        payload["atc_code"] = serde_json::Value::String(value.to_string());
+    }
+    if let Some(value) = side_effects.map(str::trim).filter(|v| !v.is_empty()) {
+        payload["side_effects"] = serde_json::Value::String(value.to_string());
+    }
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))

@@ -31,6 +31,9 @@ pub struct LookupResult {
     /// Human-readable explanation when `found` is false (shown in preview panel).
     #[serde(default)]
     pub miss_reason: Option<String>,
+    /// Public SPC excerpt (Ανεπιθύμητες ενέργειες), when the catalog already has it.
+    #[serde(default)]
+    pub side_effects: Option<String>,
 }
 
 fn lookup_miss(miss_reason: impl Into<String>) -> LookupResult {
@@ -41,6 +44,7 @@ fn lookup_miss(miss_reason: impl Into<String>) -> LookupResult {
         atc_code: None,
         source: None,
         miss_reason: Some(miss_reason.into()),
+        side_effects: None,
     }
 }
 
@@ -84,6 +88,9 @@ fn lookup_barcode_test(barcode: &str) -> LookupResult {
             atc_code: Some("N02BE51".into()),
             source: Some("catalog".into()),
             miss_reason: None,
+            side_effects: Some(
+                "Σπάνια δερματικό εξάνθημα ή ερυθρότητα. Σε υπερβολική δόση υπάρχει κίνδυνος ηπατικής βλάβης.".into(),
+            ),
         };
     }
     let suffix = if barcode.len() >= 4 { &barcode[barcode.len() - 4..] } else { barcode };
@@ -94,6 +101,7 @@ fn lookup_barcode_test(barcode: &str) -> LookupResult {
         atc_code: Some("N/A".into()),
         source: Some("catalog".into()),
         miss_reason: None,
+        side_effects: Some("Ήπια γαστρεντερική δυσφορία σε μικρό ποσοστό ασθενών.".into()),
     }
 }
 
@@ -132,6 +140,7 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
             atc_code: None,
             source: Some("galinos".into()),
             miss_reason: None,
+            side_effects: None,
         };
     }
 
@@ -145,6 +154,7 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 atc_code: None,
                 source: Some("commercial_registry".into()),
                 miss_reason: None,
+            side_effects: None,
             };
         }
         steps.push("commercial registry: όχι".into());
@@ -161,6 +171,7 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 atc_code: None,
                 source: Some("galinos".into()),
                 miss_reason: None,
+            side_effects: None,
             };
         }
         steps.push("Galinos: όχι".into());
@@ -182,6 +193,7 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 atc_code: None,
                 source: Some("eprescription".into()),
                 miss_reason: None,
+            side_effects: None,
             };
         }
 
@@ -206,6 +218,7 @@ async fn lookup_barcode_prod(barcode: &str) -> LookupResult {
                 atc_code: None,
                 source: Some("openfoodfacts".into()),
                 miss_reason: None,
+            side_effects: None,
             };
         }
 
@@ -302,10 +315,17 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
             return LookupResult {
                 found: true,
                 product_name: parsed.get("product_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                active_ingredient: None,
-                atc_code: None,
+                active_ingredient: parsed
+                    .get("active_ingredient")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                atc_code: parsed.get("atc_code").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 source: Some("catalog".into()),
                 miss_reason: None,
+                side_effects: parsed
+                    .get("side_effects")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             };
         }
     }
@@ -313,13 +333,24 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
     lookup_miss("Μη έγκυρη απάντηση Supabase (lookup_only)")
 }
 
-pub async fn get_recommendation(barcode: &str, product_name: Option<&str>) -> RecommendationDto {
+pub async fn get_recommendation(
+    barcode: &str,
+    product_name: Option<&str>,
+    active_ingredient: Option<&str>,
+    atc_code: Option<&str>,
+    side_effects: Option<&str>,
+) -> RecommendationDto {
     let profile = env_config::current_profile();
-    env_config::app_log(&format!("[Recommend] {barcode} product_name={:?} (profile: {:?})", product_name, profile));
+    env_config::app_log(&format!(
+        "[Recommend] {barcode} product_name={:?} (profile: {:?})",
+        product_name, profile
+    ));
 
     match profile {
         AppProfile::Test => get_test_recommendation(barcode).await,
-        AppProfile::Prod => get_prod_recommendation(barcode, product_name).await,
+        AppProfile::Prod => {
+            get_prod_recommendation(barcode, product_name, active_ingredient, atc_code, side_effects).await
+        }
     }
 }
 
@@ -385,7 +416,13 @@ async fn get_test_recommendation(barcode: &str) -> RecommendationDto {
     }
 }
 
-async fn get_prod_recommendation(barcode: &str, product_name: Option<&str>) -> RecommendationDto {
+async fn get_prod_recommendation(
+    barcode: &str,
+    product_name: Option<&str>,
+    active_ingredient: Option<&str>,
+    atc_code: Option<&str>,
+    side_effects: Option<&str>,
+) -> RecommendationDto {
     let functions_url = match env_config::get_env("SUPABASE_FUNCTIONS_URL") {
         Some(v) => v,
         None => {
@@ -424,6 +461,15 @@ async fn get_prod_recommendation(barcode: &str, product_name: Option<&str>) -> R
     });
     if let Some(name) = product_name {
         payload["product_name"] = serde_json::Value::String(name.to_string());
+    }
+    if let Some(value) = active_ingredient.map(str::trim).filter(|v| !v.is_empty()) {
+        payload["active_ingredient"] = serde_json::Value::String(value.to_string());
+    }
+    if let Some(value) = atc_code.map(str::trim).filter(|v| !v.is_empty()) {
+        payload["atc_code"] = serde_json::Value::String(value.to_string());
+    }
+    if let Some(value) = side_effects.map(str::trim).filter(|v| !v.is_empty()) {
+        payload["side_effects"] = serde_json::Value::String(value.to_string());
     }
 
     env_config::app_log(&format!("[Prod] POST → {functions_url}"));

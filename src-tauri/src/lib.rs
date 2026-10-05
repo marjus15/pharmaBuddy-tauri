@@ -7,14 +7,34 @@ mod eprescription;
 mod galinos;
 mod pharmacy_config;
 mod recommendation;
+mod side_effects;
 
 use pharmacy_config::PharmacyStatus;
 use recommendation::RecommendationDto;
+use side_effects::SideEffectsDto;
 use tauri::Manager;
 
 #[tauri::command]
-async fn get_recommendation(barcode: String, product_name: Option<String>) -> RecommendationDto {
-    recommendation::get_recommendation(&barcode, product_name.as_deref()).await
+async fn get_recommendation(
+    barcode: String,
+    product_name: Option<String>,
+    active_ingredient: Option<String>,
+    atc_code: Option<String>,
+    side_effects: Option<String>,
+) -> RecommendationDto {
+    recommendation::get_recommendation(
+        &barcode,
+        product_name.as_deref(),
+        active_ingredient.as_deref(),
+        atc_code.as_deref(),
+        side_effects.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn fetch_side_effects(barcode: String, product_name: Option<String>) -> SideEffectsDto {
+    side_effects::fetch_side_effects(&barcode, product_name.as_deref()).await
 }
 
 #[tauri::command]
@@ -86,6 +106,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_recommendation,
             lookup_barcode,
+            fetch_side_effects,
             get_profile,
             toggle_profile,
             get_pharmacy_status,

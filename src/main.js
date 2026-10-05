@@ -46,7 +46,7 @@ let activationMode = "activate";
 
 const MANUAL_ENTRY_BARCODE = "manual-entry";
 
-/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,recommendation:string|null,errorMessage:string|null,status:string}>} */
+/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,sideEffects:string|null,sideEffectsStatus:string,recommendation:string|null,errorMessage:string|null,status:string}>} */
 let scannedDrugs = [];
 let activeDrugId = null;
 let sidebarOpen = false;
@@ -54,6 +54,7 @@ let processing = false;
 let lookupInFlight = false;
 
 const RECOMMENDATION_TIMEOUT_MS = 35000;
+const sideEffectLoads = new Map();
 
 const GREEK_LAYOUT_DIGIT_MAP_DEFAULT = Object.freeze({
   c: "0", C: "0", o: "0", O: "0", "ο": "0", "Ο": "0",
@@ -592,6 +593,8 @@ function createDrugEntry(lookupResult, barcode) {
     productName: lookupResult.product_name || "",
     activeIngredient: lookupResult.active_ingredient || "",
     atcCode: lookupResult.atc_code || "",
+    sideEffects: lookupResult.side_effects || null,
+    sideEffectsStatus: lookupResult.side_effects ? "done" : "idle",
     recommendation: null,
     errorMessage: null,
     status: "idle",
@@ -609,6 +612,8 @@ function highlightDrugRow(drugId) {
 
 function syncDrugItemElement(el, drug) {
   const btn = el.querySelector(".drug-name-btn");
+  const effectsBlock = el.querySelector(".drug-side-effects");
+  const effectsText = el.querySelector(".side-effects-text");
   const recBlock = el.querySelector(".drug-recommendation");
   const recText = el.querySelector(".recommendation-text");
 
@@ -617,6 +622,19 @@ function syncDrugItemElement(el, drug) {
   btn.disabled = processing && drug.status === "loading";
   btn.classList.toggle("active", drug.id === activeDrugId);
   btn.classList.toggle("loading", drug.status === "loading");
+
+  if (drug.sideEffects) {
+    effectsBlock.classList.remove("hidden", "loading");
+    effectsText.textContent = drug.sideEffects;
+  } else if (drug.sideEffectsStatus === "loading") {
+    effectsBlock.classList.remove("hidden");
+    effectsBlock.classList.add("loading");
+    effectsText.textContent = "Αναζήτηση παρενεργειών…";
+  } else {
+    effectsBlock.classList.add("hidden");
+    effectsBlock.classList.remove("loading");
+    effectsText.textContent = "";
+  }
 
   const isActive = drug.id === activeDrugId;
 
@@ -687,6 +705,24 @@ function createDrugItemElement(drug) {
     handleDrugNameClick(drug.id);
   });
 
+  const effectsBlock = document.createElement("div");
+  effectsBlock.className = "drug-side-effects hidden";
+
+  const effectsLabel = document.createElement("p");
+  effectsLabel.className = "side-effects-label";
+  effectsLabel.textContent = "Παρενέργειες";
+
+  const effectsText = document.createElement("p");
+  effectsText.className = "side-effects-text";
+
+  const effectsSource = document.createElement("p");
+  effectsSource.className = "side-effects-source";
+  effectsSource.textContent = "Απόσπασμα ΠΧΠ · Γαληνός";
+
+  effectsBlock.appendChild(effectsLabel);
+  effectsBlock.appendChild(effectsText);
+  effectsBlock.appendChild(effectsSource);
+
   const recBlock = document.createElement("div");
   recBlock.className = "drug-recommendation hidden";
 
@@ -695,6 +731,7 @@ function createDrugItemElement(drug) {
   recBlock.appendChild(recText);
 
   item.appendChild(btn);
+  item.appendChild(effectsBlock);
   item.appendChild(recBlock);
   syncDrugItemElement(item, drug);
   return item;
@@ -734,6 +771,7 @@ async function handleLookupResult(lookupResult, barcode) {
 
   const existing = findDrugByBarcode(barcode);
   if (existing) {
+    void loadSideEffects(existing);
     highlightDrugRow(existing.id);
     setOrbState("success");
     triggerFlash();
@@ -748,6 +786,7 @@ async function handleLookupResult(lookupResult, barcode) {
     appendDrug(drug);
     if (!sidebarOpen) await openSidebar();
     else await resizeWindow("sidebar");
+    void loadSideEffects(drug);
     setOrbState("success");
     triggerFlash();
     setTimeout(() => setOrbState("idle"), 400);
@@ -784,6 +823,8 @@ function addManualDrugFromInput() {
     productName: name,
     activeIngredient: "",
     atcCode: "",
+    sideEffects: null,
+    sideEffectsStatus: "idle",
     recommendation: null,
     errorMessage: null,
     status: "idle",
@@ -816,6 +857,53 @@ async function showScanError(errorMessage) {
   console.error("[Scan] Error:", errorMessage);
 }
 
+function loadSideEffects(drug) {
+  if (!drug || drug.sideEffects || drug.sideEffectsStatus === "empty") {
+    return Promise.resolve();
+  }
+  if (sideEffectLoads.has(drug.id)) {
+    return sideEffectLoads.get(drug.id);
+  }
+
+  drug.sideEffectsStatus = "loading";
+  renderDrugList();
+
+  const job = invoke("fetch_side_effects", {
+    barcode: drug.barcode,
+    productName: drug.productName || null,
+  })
+    .then(async (result) => {
+      const text = String(result?.side_effects || "").trim();
+      if (text) {
+        drug.sideEffects = text;
+        drug.sideEffectsStatus = "done";
+        if (result.active_ingredient && !drug.activeIngredient) {
+          drug.activeIngredient = result.active_ingredient;
+        }
+        if (result.atc_code && !drug.atcCode) {
+          drug.atcCode = result.atc_code;
+        }
+        if (result.product_name && !drug.productName) {
+          drug.productName = result.product_name;
+        }
+      } else {
+        drug.sideEffectsStatus = "empty";
+      }
+    })
+    .catch((err) => {
+      console.warn("[SideEffects] fetch failed:", err);
+      drug.sideEffectsStatus = "empty";
+    })
+    .finally(async () => {
+      sideEffectLoads.delete(drug.id);
+      renderDrugList();
+      if (sidebarOpen) await resizeWindow("sidebar");
+    });
+
+  sideEffectLoads.set(drug.id, job);
+  return job;
+}
+
 async function requestRecommendation(drugId) {
   if (processing) return;
 
@@ -839,6 +927,7 @@ async function requestRecommendation(drugId) {
   renderDrugList();
   setOrbState("thinking");
 
+  await loadSideEffects(drug);
   console.log(`[Recommend] barcode=${drug.barcode} product_name="${drug.productName}"`);
 
   try {
@@ -847,6 +936,9 @@ async function requestRecommendation(drugId) {
       invoke("get_recommendation", {
         barcode: drug.barcode,
         productName: drug.productName || null,
+        activeIngredient: drug.activeIngredient || null,
+        atcCode: drug.atcCode || null,
+        sideEffects: drug.sideEffects || null,
       }),
       new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
@@ -954,6 +1046,7 @@ function setupDrag() {
     if (target.closest("#activation-submit-btn")) return;
     if (target.closest(".drug-name-btn")) return;
     if (target.closest(".drug-recommendation")) return;
+    if (target.closest(".drug-side-effects")) return;
     if (target.closest(".drug-list")) return;
 
     if (target.closest("[data-drag-region]")) {
