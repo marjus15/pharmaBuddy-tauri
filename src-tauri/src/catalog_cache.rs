@@ -1,3 +1,4 @@
+use crate::auth_session;
 use crate::env_config;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -103,8 +104,9 @@ async fn write_catalog_entry(
     side_effects: Option<&str>,
 ) -> Result<bool, String> {
     let url = cache_catalog_url().ok_or_else(|| "Missing SUPABASE_FUNCTIONS_URL".to_string())?;
-    let anon_key =
-        env_config::get_env("SUPABASE_ANON_KEY").ok_or_else(|| "Missing SUPABASE_ANON_KEY".to_string())?;
+    if env_config::get_env("SUPABASE_ANON_KEY").is_none() {
+        return Err("Missing SUPABASE_ANON_KEY".to_string());
+    }
 
     let mut payload = serde_json::json!({
         "barcode": barcode,
@@ -121,24 +123,9 @@ async fn write_catalog_entry(
         payload["side_effects"] = serde_json::Value::String(value.to_string());
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(8))
-        .build()
-        .map_err(|ex| ex.to_string())?;
-
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {anon_key}"))
-        .header("Accept", "application/json")
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|ex| ex.to_string())?;
-
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(format!("HTTP {} — {body}", status.as_u16()));
+    let (status, body) = auth_session::post_edge(&url, &payload, Duration::from_secs(8)).await?;
+    if !(200..300).contains(&status) {
+        return Err(format!("HTTP {status} — {body}"));
     }
 
     let parsed: serde_json::Value =

@@ -60,7 +60,11 @@ Output: `src-tauri/target/release/bundle/`
 | `PHARMABUDDY_PROFILE`              | `test` (mock) or `prod` (Supabase)                                                                                     |
 | `PHARMABUDDY_SCANNER_THRESHOLD_MS` | Max gap between scanner keystrokes before the hook buffer clears (default `400`; try `800` for slow/wireless scanners) |
 | `SUPABASE_FUNCTIONS_URL`           | Full edge function URL (prod only)                                                                                     |
-| `SUPABASE_ANON_KEY`                | Bearer token (prod only)                                                                                               |
+| `SUPABASE_ANON_KEY`                | Supabase anon key (prod only). With login on, the user JWT is the bearer token.                                       |
+| `PHARMABUDDY_REQUIRE_LOGIN`        | PROD login gate. Default `true`. Set `false` before build for the previous no-login widget.                           |
+| `PHARMABUDDY_SUPPORT_CONTACT`      | Phone in the inactive-pharmacy message («επικοινωνήστε στο …»). Default placeholder: `69XX XXX XXX`.                    |
+
+Pharmacy accounts, deploy steps, and the kill switch are in [docs/pharmacy-login.md](docs/pharmacy-login.md). TEST profile does not ask for a login.
 
 Profile is also stored in `%LOCALAPPDATA%\pharmaBuddy\profile.txt` (shared with WinUI app). Click the **TEST** / **PROD** badge under the orb to toggle.
 

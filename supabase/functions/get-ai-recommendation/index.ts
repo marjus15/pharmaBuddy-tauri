@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import { authorizePharmacy } from "../_shared/pharmacy_auth.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -348,26 +349,34 @@ Deno.serve(async (req) => {
 
     span.attrs["pharmabuddy.barcode"] = String(barcode)
 
+    const legacyPharmacyId = typeof pharmacy_id === "string" && pharmacy_id.trim()
+      ? pharmacy_id.trim()
+      : null
+    const auth = await authorizePharmacy(req, legacyPharmacyId)
+    if (!auth.ok) {
+      span.status = auth.status >= 500 ? "ERROR" : "OK"
+      span.statusMessage = auth.error
+      return auth.response
+    }
+
+    const resolvedPharmacyId = auth.pharmacyId
+    if (auth.userId) span.attrs["pharmabuddy.user_id"] = auth.userId
+    if (resolvedPharmacyId) span.attrs["pharmabuddy.pharmacy_id"] = resolvedPharmacyId
+    console.log(
+      lookup_only === true
+        ? "[get-ai-recommendation] lookup_call"
+        : "[get-ai-recommendation] recommendation_call",
+      JSON.stringify({
+        pharmacy_id: resolvedPharmacyId,
+        user_id: auth.userId,
+        barcode: String(barcode),
+      }),
+    )
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
-
-    if (pharmacy_id) {
-      const { data: pharmacy } = await supabaseClient
-        .from('pharmacies')
-        .select('status')
-        .eq('id', pharmacy_id)
-        .maybeSingle()
-
-      if (!pharmacy || pharmacy.status !== 'active') {
-        span.status = "OK"
-        return new Response(JSON.stringify({ error: 'license_inactive', message: 'Pharmacy license is not active.' }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-    }
 
     let productName = "Unknown Product"
     let aiContext = ""
@@ -375,11 +384,11 @@ Deno.serve(async (req) => {
     let atcCode = "Δεν αναφέρεται"
     let sideEffects = ""
 
-    if (pharmacy_id) {
+    if (resolvedPharmacyId) {
       const { data: customItem } = await supabaseClient
         .from('pharmacy_custom_mappings')
         .select('custom_name, supplement_category')
-        .eq('pharmacy_id', pharmacy_id)
+        .eq('pharmacy_id', resolvedPharmacyId)
         .eq('barcode', barcode)
         .single()
 

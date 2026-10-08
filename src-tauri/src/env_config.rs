@@ -82,6 +82,9 @@ fn embedded_env(key: &str) -> Option<String> {
         "SUPABASE_FUNCTIONS_URL" => option_env!("SUPABASE_FUNCTIONS_URL")?,
         "SUPABASE_ANON_KEY" => option_env!("SUPABASE_ANON_KEY")?,
         "PHARMABUDDY_PROFILE" => option_env!("PHARMABUDDY_PROFILE")?,
+        "PHARMABUDDY_REQUIRE_LOGIN" => option_env!("PHARMABUDDY_REQUIRE_LOGIN")?,
+        "PHARMABUDDY_SUPPORT_CONTACT" => option_env!("PHARMABUDDY_SUPPORT_CONTACT")?,
+        "PHARMABUDDY_LOGIN_EMAIL_DOMAIN" => option_env!("PHARMABUDDY_LOGIN_EMAIL_DOMAIN")?,
         _ => return None,
     };
 
