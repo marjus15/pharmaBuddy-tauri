@@ -10,7 +10,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const OFFLINE_MESSAGE: &str = "Δεν υπάρχει σύνδεση στο internet";
 pub const BAD_CREDENTIALS_MESSAGE: &str = "Λάθος στοιχεία";
-pub const DEFAULT_SUPPORT_CONTACT: &str = "69XX\u{00A0}XXX\u{00A0}XXX";
+pub const INACTIVE_PHARMACY_MESSAGE: &str =
+    "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
+pub const UNASSIGNED_PHARMACY_MESSAGE: &str =
+    "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 
 const KEYRING_SERVICE: &str = "gr.pharmabuddy.widget";
 const KEYRING_ACCOUNT: &str = "supabase-session";
@@ -25,7 +28,6 @@ pub struct AuthGate {
     pub pharmacy_name: Option<String>,
     pub email: Option<String>,
     pub remembered_username: Option<String>,
-    pub support_contact: String,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
 }
@@ -89,31 +91,12 @@ fn is_falsey(value: &str) -> bool {
     matches!(value.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off")
 }
 
-pub fn support_contact() -> String {
-    env_config::get_env("PHARMABUDDY_SUPPORT_CONTACT")
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_SUPPORT_CONTACT.to_string())
+pub fn inactive_pharmacy_message() -> &'static str {
+    INACTIVE_PHARMACY_MESSAGE
 }
 
-pub fn inactive_pharmacy_message(contact: &str) -> String {
-    let trimmed = contact.trim().trim_end_matches('.').trim();
-    let who = if trimmed.is_empty() {
-        DEFAULT_SUPPORT_CONTACT
-    } else {
-        trimmed
-    };
-    format!("Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο {who}.")
-}
-
-pub fn unassigned_pharmacy_message(contact: &str) -> String {
-    let trimmed = contact.trim().trim_end_matches('.').trim();
-    let who = if trimmed.is_empty() {
-        DEFAULT_SUPPORT_CONTACT
-    } else {
-        trimmed
-    };
-    format!("Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο, επικοινωνήστε στο {who}.")
+pub fn unassigned_pharmacy_message() -> &'static str {
+    UNASSIGNED_PHARMACY_MESSAGE
 }
 
 pub fn normalize_identifier(raw: &str, domain: Option<&str>) -> Result<String, AuthFailure> {
@@ -329,7 +312,6 @@ fn empty_login_gate(error_code: Option<&str>, error_message: Option<String>) -> 
         pharmacy_name: None,
         email: None,
         remembered_username: read_remembered_username(),
-        support_contact: support_contact(),
         error_code: error_code.map(str::to_string),
         error_message,
     }
@@ -344,7 +326,6 @@ fn gate_from_session(session: &StoredSession, error_code: Option<&str>, error_me
         pharmacy_name: Some(session.pharmacy_name.clone()),
         email: Some(session.email.clone()),
         remembered_username: Some(session.email.clone()),
-        support_contact: support_contact(),
         error_code: error_code.map(str::to_string),
         error_message,
     }
@@ -358,7 +339,6 @@ fn test_gate() -> AuthGate {
         pharmacy_name: None,
         email: None,
         remembered_username: None,
-        support_contact: support_contact(),
         error_code: None,
         error_message: None,
     }
@@ -372,7 +352,6 @@ fn legacy_gate() -> AuthGate {
         pharmacy_name: None,
         email: None,
         remembered_username: None,
-        support_contact: support_contact(),
         error_code: None,
         error_message: None,
     }
@@ -569,7 +548,7 @@ async fn fetch_membership(origin: &str, anon: &str, token: &str, user_id: &str) 
     let Some(row) = rows.first() else {
         return Err(AuthFailure {
             code: "pharmacy_unassigned",
-            message: unassigned_pharmacy_message(&support_contact()),
+            message: unassigned_pharmacy_message().into(),
         });
     };
     let embedded = row.get("pharmacies").cloned().unwrap_or(Value::Null);
@@ -593,7 +572,7 @@ async fn fetch_membership(origin: &str, anon: &str, token: &str, user_id: &str) 
     if pharmacy_id.is_empty() {
         return Err(AuthFailure {
             code: "pharmacy_unassigned",
-            message: unassigned_pharmacy_message(&support_contact()),
+            message: unassigned_pharmacy_message().into(),
         });
     }
     Ok(Membership {
@@ -619,7 +598,7 @@ fn session_from_parts(token: TokenBundle, membership: Membership) -> StoredSessi
 fn inactive_failure() -> AuthFailure {
     AuthFailure {
         code: "pharmacy_inactive",
-        message: inactive_pharmacy_message(&support_contact()),
+        message: inactive_pharmacy_message().into(),
     }
 }
 
@@ -729,7 +708,11 @@ pub async fn current_gate() -> AuthGate {
             if updated.pharmacy_active {
                 gate_from_session(&updated, None, None)
             } else {
-                gate_from_session(&updated, Some("pharmacy_inactive"), Some(inactive_pharmacy_message(&support_contact())))
+                gate_from_session(
+                    &updated,
+                    Some("pharmacy_inactive"),
+                    Some(inactive_pharmacy_message().into()),
+                )
             }
         }
         Err(err) if err.code == "offline" => {
@@ -740,7 +723,7 @@ pub async fn current_gate() -> AuthGate {
                 gate_from_session(
                     &session,
                     Some("pharmacy_inactive"),
-                    Some(inactive_pharmacy_message(&support_contact())),
+                    Some(inactive_pharmacy_message().into()),
                 )
             } else {
                 empty_login_gate(Some(err.code), Some(err.message))
@@ -950,12 +933,12 @@ async fn post_with_auth(
 pub async fn session_block_message(status: u16, body: &str) -> Option<String> {
     if body.contains("pharmacy_inactive") {
         mark_pharmacy_inactive().await;
-        return Some(inactive_pharmacy_message(&support_contact()));
+        return Some(inactive_pharmacy_message().into());
     }
     if body.contains("pharmacy_unassigned") {
         let _guard = refresh_lock().lock().await;
         clear_session_storage();
-        return Some(unassigned_pharmacy_message(&support_contact()));
+        return Some(unassigned_pharmacy_message().into());
     }
     if login_required() && (status == 401 || body.contains("\"unauthorized\"")) {
         let _guard = refresh_lock().lock().await;
@@ -1012,15 +995,16 @@ mod tests {
     fn greek_auth_messages_match_the_widget() {
         assert_eq!(BAD_CREDENTIALS_MESSAGE, "Λάθος στοιχεία");
         assert_eq!(OFFLINE_MESSAGE, "Δεν υπάρχει σύνδεση στο internet");
-        assert_eq!(DEFAULT_SUPPORT_CONTACT, "69XX\u{00A0}XXX\u{00A0}XXX");
         assert_eq!(
-            inactive_pharmacy_message("210 000 0000"),
-            "Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο 210 000 0000."
+            inactive_pharmacy_message(),
+            "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy."
         );
         assert_eq!(
-            inactive_pharmacy_message("  69XX XXX XXX. "),
-            "Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο 69XX XXX XXX."
+            unassigned_pharmacy_message(),
+            "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy."
         );
+        assert!(!inactive_pharmacy_message().chars().any(|ch| ch.is_ascii_digit()));
+        assert!(!unassigned_pharmacy_message().chars().any(|ch| ch.is_ascii_digit()));
     }
 
     #[test]

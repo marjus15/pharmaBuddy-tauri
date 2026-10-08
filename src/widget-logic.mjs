@@ -1,7 +1,11 @@
 export const OFFLINE_MESSAGE = "Δεν υπάρχει σύνδεση στο internet";
 export const UPDATE_NOTE = "↻ Νέα έκδοση στο επόμενο άνοιγμα";
 export const REPORT_SENT_MARK = "✓ Στάλθηκε";
-export const REPORT_SENT_HINT = "Αν τηλεφωνήσετε, πείτε αυτόν τον κωδικό.";
+export const REPORT_SENT_HINT = "Πείτε αυτόν τον κωδικό στον υπεύθυνο του PharmaBuddy.";
+export const INACTIVE_PHARMACY_MESSAGE =
+  "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
+export const UNASSIGNED_PHARMACY_MESSAGE =
+  "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 
 export function formatReportCode(code) {
   const clean = String(code || "")

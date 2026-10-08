@@ -12,7 +12,7 @@ import {
   reportStatusFor,
 } from "../src/widget-logic.mjs";
 
-test("sent report shows a phone code and closes instead of resending", () => {
+test("sent report shows a reference code and closes instead of resending", () => {
   assert.equal(formatReportCode("a2b3"), "#A2B3");
   assert.equal(formatReportCode("#A2B3"), "#A2B3");
   const sent = reportStatusFor({ ok: true, reference_code: "A2B3" });
@@ -21,7 +21,7 @@ test("sent report shows a phone code and closes instead of resending", () => {
   assert.equal(sent.mark, "✓ Στάλθηκε");
   assert.equal(sent.codeLabel, "Κωδικός αναφοράς: #A2B3");
   assert.equal(sent.hint, REPORT_SENT_HINT);
-  assert.equal(sent.hint, "Αν τηλεφωνήσετε, πείτε αυτόν τον κωδικό.");
+  assert.equal(sent.hint, "Πείτε αυτόν τον κωδικό στον υπεύθυνο του PharmaBuddy.");
   assert.equal(sent.readOnly, true);
   assert.equal(sent.buttonLabel, "Κλείσιμο");
   assert.equal(sent.closeOnSend, true);
@@ -101,7 +101,7 @@ test("widget copy and the two polish rules are in the ui", () => {
   assert.match(css, /\.report-sent-code \{[^}]*monospace/);
   assert.match(css, /\.orb-dock\.has-update-note \{[^}]*width:\s*308px/);
   assert.match(css, /\.drug-item:first-child \.drug-name-btn \{[^}]*padding-right:\s*48px;/);
-  assert.match(css, /\.login-error \{[^}]*height:\s*calc\(1\.35em \* 3\)/);
+  assert.match(css, /\.login-error \{[^}]*height:\s*calc\(1\.35em \* 4\)/);
   assert.match(css, /\.login-btn \{[^}]*margin-top:\s*0;/);
   const conf = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));

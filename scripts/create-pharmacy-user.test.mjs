@@ -49,10 +49,24 @@ test("migration defines pharmacies, members, and rls", () => {
 test("widget shows the three greek login errors", () => {
   const js = [readFileSync("src/main.js", "utf8"), readFileSync("src/widget-logic.mjs", "utf8")].join("\n");
   const html = readFileSync("src/index.html", "utf8");
+  const rust = readFileSync("src-tauri/src/auth_session.rs", "utf8");
   assert.match(js, /Λάθος στοιχεία/);
   assert.match(js, /Δεν υπάρχει σύνδεση στο internet/);
-  assert.match(js, /Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο/);
-  assert.match(js, /69XX\\u00A0XXX\\u00A0XXX/);
+  assert.match(
+    js,
+    /Ο λογαριασμός του φαρμακείου είναι ανενεργός\. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy\./,
+  );
+  assert.match(
+    rust,
+    /Ο λογαριασμός του φαρμακείου είναι ανενεργός\. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy\./,
+  );
+  assert.match(
+    js,
+    /Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο\. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy\./,
+  );
+  assert.doesNotMatch(js, /69XX/);
+  assert.doesNotMatch(js, /PHARMABUDDY_SUPPORT_CONTACT/);
+  assert.doesNotMatch(js, /επικοινωνήστε στο/);
   assert.match(js, /Σύνδεση…/);
   assert.match(
     js,
@@ -63,4 +77,27 @@ test("widget shows the three greek login errors", () => {
   assert.equal(html.includes("Εισοδος"), false);
   assert.match(html, /login-password-toggle/);
   assert.match(html, /Αποσύνδεση/);
+});
+
+test("support phone plumbing is gone from the widget build", () => {
+  const files = [
+    "src/main.js",
+    "src/widget-logic.mjs",
+    "src/style.css",
+    "src/index.html",
+    "src-tauri/src/auth_session.rs",
+    "src-tauri/src/env_config.rs",
+    "src-tauri/build.rs",
+    "README.md",
+    ".env.example",
+    "docs/pharmacy-login.md",
+    "docs/problem-reports.md",
+    ".github/workflows/release.yml",
+  ];
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    assert.doesNotMatch(text, /PHARMABUDDY_SUPPORT_CONTACT/, file);
+    assert.doesNotMatch(text, /69XX/, file);
+    assert.doesNotMatch(text, /τηλεφωνήσετε/, file);
+  }
 });
