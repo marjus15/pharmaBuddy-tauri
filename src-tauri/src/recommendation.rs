@@ -1,3 +1,4 @@
+use crate::auth_session;
 use crate::barcode_fallback;
 use crate::catalog_cache;
 use crate::commercial_registry;
@@ -249,15 +250,12 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
             return lookup_miss("Λείπει SUPABASE_FUNCTIONS_URL στο .env");
         }
     };
-    let anon_key = match env_config::get_env("SUPABASE_ANON_KEY") {
-        Some(v) => v,
-        None => {
-            env_config::app_log("[Lookup] Missing SUPABASE_ANON_KEY");
-            return lookup_miss("Λείπει SUPABASE_ANON_KEY στο .env");
-        }
-    };
+    if env_config::get_env("SUPABASE_ANON_KEY").is_none() {
+        env_config::app_log("[Lookup] Missing SUPABASE_ANON_KEY");
+        return lookup_miss("Λείπει SUPABASE_ANON_KEY στο .env");
+    }
 
-    let pharmacy_id = pharmacy_config::get_pharmacy_id().unwrap_or_default();
+    let pharmacy_id = auth_session::request_pharmacy_id();
 
     let payload = serde_json::json!({
         "barcode": barcode,
@@ -267,38 +265,27 @@ async fn lookup_catalog_prod(barcode: &str) -> LookupResult {
 
     env_config::app_log(&format!("[Lookup] POST → {functions_url}"));
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
-
-    let response = match client
-        .post(&functions_url)
-        .header("Authorization", format!("Bearer {anon_key}"))
-        .header("Accept", "application/json")
-        .json(&payload)
-        .send()
-        .await
-    {
-        Ok(r) => r,
+    let (status, body) = match auth_session::post_edge(&functions_url, &payload, Duration::from_secs(10)).await {
+        Ok(response) => response,
         Err(ex) => {
             env_config::app_log(&format!("[Lookup] Network error: {ex}"));
             return lookup_miss(format!("Σφάλμα δικτύου Supabase: {ex}"));
         }
     };
-
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
     env_config::app_log(&format!("[Lookup] Response: {body}"));
 
-    if !status.is_success() {
-        if status.as_u16() == 403 && pharmacy_config::is_license_inactive_error(&body) {
+    if let Some(message) = auth_session::session_block_message(status, &body).await {
+        return lookup_miss(message);
+    }
+
+    if !(200..300).contains(&status) {
+        if status == 403 && pharmacy_config::is_license_inactive_error(&body) {
             pharmacy_config::clear_config();
             return lookup_miss("Η άδεια χρήσης δεν είναι ενεργή. Επικοινωνήστε μαζί μας.");
         }
         return lookup_miss(format!(
             "Supabase HTTP {} — {}",
-            status.as_u16(),
+            status,
             body.chars().take(120).collect::<String>()
         ));
     }
@@ -438,22 +425,19 @@ async fn get_prod_recommendation(
         }
     };
 
-    let anon_key = match env_config::get_env("SUPABASE_ANON_KEY") {
-        Some(v) => v,
-        None => {
-            return RecommendationDto {
-                success: false,
-                product_name: None,
-                recommendation: None,
-                error_message: Some(
-                    "Λείπουν SUPABASE_FUNCTIONS_URL ή SUPABASE_ANON_KEY (απαιτούνται για PROD).".into(),
-                ),
-                raw_response: None,
-            };
-        }
-    };
+    if env_config::get_env("SUPABASE_ANON_KEY").is_none() {
+        return RecommendationDto {
+            success: false,
+            product_name: None,
+            recommendation: None,
+            error_message: Some(
+                "Λείπουν SUPABASE_FUNCTIONS_URL ή SUPABASE_ANON_KEY (απαιτούνται για PROD).".into(),
+            ),
+            raw_response: None,
+        };
+    }
 
-    let pharmacy_id = pharmacy_config::get_pharmacy_id().unwrap_or_default();
+    let pharmacy_id = auth_session::request_pharmacy_id();
 
     let mut payload = serde_json::json!({
         "barcode": barcode,
@@ -475,20 +459,8 @@ async fn get_prod_recommendation(
     env_config::app_log(&format!("[Prod] POST → {functions_url}"));
     env_config::app_log(&format!("[Prod] Payload: {payload}"));
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .unwrap_or_default();
-
-    let response = match client
-        .post(&functions_url)
-        .header("Authorization", format!("Bearer {anon_key}"))
-        .header("Accept", "application/json")
-        .json(&payload)
-        .send()
-        .await
-    {
-        Ok(r) => r,
+    let (status, body) = match auth_session::post_edge(&functions_url, &payload, Duration::from_secs(30)).await {
+        Ok(response) => response,
         Err(ex) => {
             env_config::app_log(&format!("[Prod] Network error: {ex}"));
             return RecommendationDto {
@@ -500,14 +472,21 @@ async fn get_prod_recommendation(
             };
         }
     };
-
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    env_config::app_log(&format!("[Prod] HTTP {}", status.as_u16()));
+    env_config::app_log(&format!("[Prod] HTTP {status}"));
     env_config::app_log(&format!("[Prod] Body: {body}"));
 
-    if !status.is_success() {
-        if status.as_u16() == 403 && pharmacy_config::is_license_inactive_error(&body) {
+    if let Some(message) = auth_session::session_block_message(status, &body).await {
+        return RecommendationDto {
+            success: false,
+            product_name: None,
+            recommendation: None,
+            error_message: Some(message),
+            raw_response: Some(body),
+        };
+    }
+
+    if !(200..300).contains(&status) {
+        if status == 403 && pharmacy_config::is_license_inactive_error(&body) {
             pharmacy_config::clear_config();
             return RecommendationDto {
                 success: false,
@@ -523,7 +502,7 @@ async fn get_prod_recommendation(
             success: false,
             product_name: None,
             recommendation: None,
-            error_message: Some(format!("Σφάλμα Supabase ({})", status.as_u16())),
+            error_message: Some(format!("Σφάλμα Supabase ({status})")),
             raw_response: Some(body),
         };
     }

@@ -556,6 +556,10 @@ body {
   color: #6dffb8;
 }
 
+.orb-chrome-btn.hidden {
+  display: none;
+}
+
 .orb-footer {
   position: relative;
   z-index: 1;
@@ -1161,4 +1165,236 @@ body {
 
 .orb-pharmacy-name.hidden {
   display: none;
+}
+
+.pharmacy-corner {
+  align-self: flex-start;
+  max-width: calc(100% - 4px);
+  margin: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(4, 12, 20, 0.82);
+  border: 1px solid rgba(0, 232, 255, 0.45);
+  color: #d7fbff;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+}
+
+.settings-anchor {
+  position: relative;
+}
+
+.orb-chrome-btn svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.settings-menu {
+  position: absolute;
+  top: 22px;
+  right: 0;
+  z-index: 40;
+  width: 176px;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(8, 14, 24, 0.96);
+  border: 1px solid rgba(0, 232, 255, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.settings-menu.hidden {
+  display: none;
+}
+
+.settings-pharmacy,
+.settings-email {
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #d7fbff;
+  word-break: break-word;
+}
+
+.settings-email {
+  color: rgba(200, 220, 235, 0.72);
+  margin-bottom: 8px;
+}
+
+.logout-btn {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 120, 140, 0.45);
+  border-radius: 7px;
+  background: rgba(64, 18, 28, 0.85);
+  color: #ffd0d8;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background: rgba(110, 28, 40, 0.95);
+}
+
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: rgba(4, 10, 18, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.login-overlay.hidden {
+  display: none;
+}
+
+.login-panel {
+  width: min(248px, calc(100% - 8px));
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 232, 255, 0.35);
+  background: rgba(8, 14, 24, 0.94);
+  box-shadow: 0 0 24px rgba(0, 232, 255, 0.15);
+}
+
+.login-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #00e8ff;
+  text-align: center;
+}
+
+.login-desc {
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c8d8f0;
+  text-align: center;
+}
+
+.login-label {
+  display: block;
+  margin: 0 0 3px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  color: rgba(0, 232, 255, 0.8);
+}
+
+.login-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 232, 255, 0.28);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f4faff;
+  font-size: 13px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: rgba(0, 232, 255, 0.65);
+  box-shadow: 0 0 0 2px rgba(0, 232, 255, 0.15);
+}
+
+.login-password-row {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.login-password-row .login-input {
+  margin-bottom: 0;
+  padding-right: 34px;
+}
+
+.login-eye {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(0, 232, 255, 0.85);
+  cursor: pointer;
+}
+
+.login-eye svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  margin: 0 auto;
+}
+
+.login-eye .eye-shut {
+  display: none;
+}
+
+.login-eye.is-visible .eye-open {
+  display: none;
+}
+
+.login-eye.is-visible .eye-shut {
+  display: block;
+}
+
+.login-error {
+  margin: 8px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #ff8ea0;
+  text-align: center;
+}
+
+.login-error.hidden {
+  display: none;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #00e8ff 0%, #00a8d8 100%);
+  color: #041018;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.login-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+body.preview-stage {
+  background: #061018;
+}
+
+body.preview-stage .app-root {
+  justify-content: center;
 }

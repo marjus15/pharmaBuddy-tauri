@@ -22,6 +22,7 @@ dotenvy = "0.15"
 rand = "0.8"
 tokio = { version = "1", features = ["time", "rt"] }
 scraper = "0.27.0"
+keyring = { version = "3", features = ["windows-native"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

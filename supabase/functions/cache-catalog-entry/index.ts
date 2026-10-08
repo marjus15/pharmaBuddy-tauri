@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import { authorizePharmacy } from "../_shared/pharmacy_auth.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,12 +28,27 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
+    const legacyPharmacyId = typeof body.pharmacy_id === "string" && body.pharmacy_id.trim()
+      ? body.pharmacy_id.trim()
+      : null
+    const auth = await authorizePharmacy(req, legacyPharmacyId)
+    if (!auth.ok) return auth.response
+
     const cleanBarcode = String(body.barcode ?? "").trim()
     const cleanName = cleanText(body.product_name, 400)
     const source = cleanText(body.source, 40) || "galinos"
     const sideEffects = cleanText(body.side_effects)
     const activeIngredient = cleanText(body.active_ingredient, 240)
     const atcCode = cleanText(body.atc_code, 16)
+
+    console.log(
+      "[cache-catalog-entry] write",
+      JSON.stringify({
+        pharmacy_id: auth.pharmacyId,
+        user_id: auth.userId,
+        barcode: cleanBarcode,
+      }),
+    )
 
     if (!/^\d+$/.test(cleanBarcode)) {
       return new Response(

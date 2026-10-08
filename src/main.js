@@ -1,8 +1,14 @@
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
-const { getCurrentWindow, LogicalSize } = window.__TAURI__.window;
-
-const WINDOW = getCurrentWindow();
+const tauri = window.__TAURI__;
+const invoke = tauri?.core?.invoke
+  ? tauri.core.invoke.bind(tauri.core)
+  : async () => {
+      throw new Error("Tauri API unavailable");
+    };
+const listen = tauri?.event?.listen
+  ? tauri.event.listen.bind(tauri.event)
+  : async () => () => {};
+const LogicalSize = tauri?.window?.LogicalSize;
+const WINDOW = tauri?.window?.getCurrentWindow ? tauri.window.getCurrentWindow() : null;
 
 // "sidebar" width is fixed on purpose (orb 250 + gap 12 + sidebar column 200 + app padding).
 // Bubbles inside the sidebar are capped at 100% of that fixed column (see style.css),
@@ -10,6 +16,7 @@ const WINDOW = getCurrentWindow();
 // the previous bug where long drug names got clipped past the left edge of the window.
 const SIZES = {
   collapsed: { width: 250, height: 288 },
+  login: { width: 300, height: 460 },
   sidebar: { width: 500, height: 320 },
 };
 
@@ -35,6 +42,18 @@ const activationSubmitBtn = $("activation-submit-btn");
 const activationError = $("activation-error");
 const activationDesc = $("activation-desc");
 const orbPharmacyName = $("orb-pharmacy-name");
+const loginOverlay = $("login-overlay");
+const loginForm = $("login-form");
+const loginIdentifier = $("login-identifier");
+const loginPassword = $("login-password");
+const loginPasswordToggle = $("login-password-toggle");
+const loginError = $("login-error");
+const loginSubmit = $("login-submit");
+const settingsButton = $("orb-settings-btn");
+const settingsMenu = $("settings-menu");
+const settingsPharmacy = $("settings-pharmacy");
+const settingsEmail = $("settings-email");
+const logoutButton = $("logout-btn");
 
 let lastHookBuffer = "";
 let lastAcceptedBarcode = "";
@@ -43,6 +62,12 @@ let pendingManualBarcode = "";
 let pharmacyActivated = false;
 let pharmacyLicenseValid = false;
 let activationMode = "activate";
+let authMode = "legacy";
+let scansEnabled = false;
+
+const BAD_CREDENTIALS_MESSAGE = "Λάθος στοιχεία";
+const OFFLINE_MESSAGE = "Δεν υπάρχει σύνδεση στο internet";
+const DEFAULT_SUPPORT_CONTACT = "την υποστήριξη PharmaBuddy";
 
 const MANUAL_ENTRY_BARCODE = "manual-entry";
 
@@ -81,6 +106,272 @@ const LICENSE_INACTIVE_MESSAGE =
   "Η άδεια χρήσης δεν είναι ενεργή. Επικοινωνήστε μαζί μας.";
 const LICENSE_RECONNECT_MESSAGE =
   "Απαιτείται σύνδεση στο διαδίκτυο για επαλήθευση της άδειας.";
+
+function inactivePharmacyMessage(contact) {
+  const who = String(contact || DEFAULT_SUPPORT_CONTACT).trim().replace(/\.+$/, "");
+  return `Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε με ${who}.`;
+}
+
+function showLoginError(message) {
+  if (!loginError) return;
+  loginError.textContent = message;
+  loginError.classList.remove("hidden");
+}
+
+function clearLoginError() {
+  if (!loginError) return;
+  loginError.textContent = "";
+  loginError.classList.add("hidden");
+}
+
+function showLoginOverlay() {
+  if (!loginOverlay) return;
+  loginOverlay.classList.remove("hidden");
+  loginOverlay.setAttribute("aria-hidden", "false");
+  if (WINDOW && LogicalSize) {
+    WINDOW.setSize(new LogicalSize(SIZES.login.width, SIZES.login.height)).catch(() => {});
+  }
+}
+
+function hideLoginOverlay() {
+  if (!loginOverlay) return;
+  loginOverlay.classList.add("hidden");
+  loginOverlay.setAttribute("aria-hidden", "true");
+  clearLoginError();
+  if (loginPassword) loginPassword.value = "";
+  if (loginPassword) loginPassword.type = "password";
+  loginPasswordToggle?.classList.remove("is-visible");
+  loginPasswordToggle?.setAttribute("aria-pressed", "false");
+  loginPasswordToggle?.setAttribute("aria-label", "Εμφάνιση κωδικού");
+}
+
+function setSettingsVisible(visible) {
+  settingsButton?.classList.toggle("hidden", !visible);
+  if (!visible) closeSettingsMenu();
+}
+
+function setSettingsDetails(gate) {
+  if (settingsPharmacy) settingsPharmacy.textContent = gate?.pharmacy_name || "";
+  if (settingsEmail) settingsEmail.textContent = gate?.email || "";
+}
+
+function closeSettingsMenu() {
+  settingsMenu?.classList.add("hidden");
+  settingsButton?.setAttribute("aria-expanded", "false");
+}
+
+function openSettingsMenu() {
+  settingsMenu?.classList.remove("hidden");
+  settingsButton?.setAttribute("aria-expanded", "true");
+}
+
+function applyAuthGate(gate) {
+  authMode = gate?.mode || "legacy";
+  if (authMode === "test") {
+    scansEnabled = true;
+    hideLoginOverlay();
+    hideActivationOverlay();
+    updatePharmacyFooter(null);
+    setSettingsVisible(false);
+    return;
+  }
+  if (authMode === "legacy") {
+    scansEnabled = false;
+    hideLoginOverlay();
+    setSettingsVisible(false);
+    return;
+  }
+
+  hideActivationOverlay();
+  if (loginIdentifier && gate?.remembered_username && !loginIdentifier.value) {
+    loginIdentifier.value = gate.remembered_username;
+  }
+  if (gate?.logged_in && gate?.scans_enabled) {
+    scansEnabled = true;
+    hideLoginOverlay();
+    updatePharmacyFooter(gate.pharmacy_name || null);
+    setSettingsVisible(true);
+    setSettingsDetails(gate);
+    if (!sidebarOpen) resizeWindow("collapsed");
+    return;
+  }
+
+  scansEnabled = false;
+  setSettingsVisible(false);
+  updatePharmacyFooter(null);
+  showLoginOverlay();
+  if (gate?.error_message) showLoginError(gate.error_message);
+  else clearLoginError();
+}
+
+async function submitLogin(event) {
+  event?.preventDefault();
+  if (!loginSubmit) return;
+  const identifier = loginIdentifier?.value?.trim() || "";
+  const password = loginPassword?.value || "";
+  if (!identifier || !password) {
+    showLoginError("Συμπληρώστε email και κωδικό.");
+    return;
+  }
+  clearLoginError();
+  loginSubmit.disabled = true;
+  loginSubmit.textContent = "Σύνδεση…";
+  try {
+    const gate = await invoke("login", { identifier, password });
+    applyAuthGate(gate);
+    if (!gate?.scans_enabled && gate?.error_message) showLoginError(gate.error_message);
+  } catch (err) {
+    const text = String(err ?? "");
+    showLoginError(text.toLowerCase().includes("network") ? OFFLINE_MESSAGE : text || OFFLINE_MESSAGE);
+  } finally {
+    loginSubmit.disabled = false;
+    loginSubmit.textContent = "Είσοδος";
+    if (loginPassword) loginPassword.value = "";
+  }
+}
+
+function setupLogin() {
+  loginForm?.addEventListener("submit", (event) => {
+    void submitLogin(event);
+  });
+  loginPasswordToggle?.addEventListener("click", () => {
+    if (!loginPassword) return;
+    const show = loginPassword.type === "password";
+    loginPassword.type = show ? "text" : "password";
+    loginPasswordToggle.classList.toggle("is-visible", show);
+    loginPasswordToggle.setAttribute("aria-pressed", show ? "true" : "false");
+    loginPasswordToggle.setAttribute("aria-label", show ? "Απόκρυψη κωδικού" : "Εμφάνιση κωδικού");
+  });
+}
+
+function setupSettingsMenu() {
+  settingsButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (settingsMenu?.classList.contains("hidden")) openSettingsMenu();
+    else closeSettingsMenu();
+  });
+  logoutButton?.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    closeSettingsMenu();
+    try {
+      const gate = await invoke("logout");
+      applyAuthGate(gate);
+    } catch (err) {
+      showLoginOverlay();
+      showLoginError(String(err));
+    }
+  });
+  document.addEventListener("mousedown", (event) => {
+    if (!settingsMenu || settingsMenu.classList.contains("hidden")) return;
+    const target = event.target;
+    if (target.closest?.("#settings-menu") || target.closest?.("#orb-settings-btn")) return;
+    closeSettingsMenu();
+  });
+}
+
+function browserPreview() {
+  if (window.__TAURI__?.core?.invoke) return null;
+  const raw = location.hash.startsWith("#") ? location.hash.slice(1) : "";
+  const params = new URLSearchParams(raw);
+  if (!params.get("preview")) return null;
+  return params;
+}
+
+function renderPreview(params) {
+  document.body.classList.add("preview-stage");
+  const state = params.get("preview");
+  const email = params.get("email") || "pilot@farmakeio.gr";
+  const pharmacy = params.get("pharmacy") || "Φαρμακείο Παπαδόπουλος";
+  const contact = params.get("contact") || DEFAULT_SUPPORT_CONTACT;
+  hideActivationOverlay();
+  hideLoginOverlay();
+  setSettingsVisible(false);
+  updatePharmacyFooter(null);
+  scansEnabled = false;
+  authMode = "test";
+
+  if (state === "login" || state === "login-error" || state === "login-inactive") {
+    authMode = "login";
+    if (loginIdentifier) loginIdentifier.value = email;
+    if (loginPassword && state !== "login") loginPassword.value = "secret-password";
+    showLoginOverlay();
+    if (state === "login-error") showLoginError(BAD_CREDENTIALS_MESSAGE);
+    if (state === "login-inactive") showLoginError(inactivePharmacyMessage(contact));
+    return;
+  }
+
+  if (state === "logged-in") {
+    authMode = "login";
+    scansEnabled = true;
+    updatePharmacyFooter(pharmacy);
+    setSettingsVisible(true);
+    setSettingsDetails({ pharmacy_name: pharmacy, email });
+    closeSettingsMenu();
+    setOrbState("idle");
+    return;
+  }
+
+  if (state === "idle") {
+    setOrbState("idle");
+    return;
+  }
+
+  if (state === "scan-success" || state === "scan-error") {
+    const success = state === "scan-success";
+    const drug = {
+      id: success ? "preview-success" : "preview-error",
+      barcode: success ? "1111111111111" : "0000000000000",
+      found: success,
+      productName: success ? "Panadol Extra 500mg (TEST)" : "0000000000000",
+      activeIngredient: success ? "Paracetamol / Caffeine" : "",
+      atcCode: success ? "N02BE51" : "",
+      sideEffects: success
+        ? "Σπάνια δερματικό εξάνθημα. Σε υπερβολική δόση, κίνδυνος ηπατικής βλάβης."
+        : null,
+      sideEffectsStatus: success ? "done" : "idle",
+      recommendation: success
+        ? "Μαζί με το Panadol Extra, προτείνετε ένα ήπιο προβιοτικό για την εντερική άνεση κατά την αγωγή. Είναι μια πρακτική και ασφαλής συνοδευτική πρόταση."
+        : null,
+      errorMessage: success
+        ? null
+        : "Δοκιμαστικό σφάλμα — το προϊόν δεν βρέθηκε στον κατάλογο.",
+      status: success ? "done" : "error",
+    };
+    scannedDrugs = [drug];
+    activeDrugId = drug.id;
+    sidebarOpen = true;
+    drugSidebar.classList.remove("hidden");
+    drugSidebar.classList.add("visible");
+    renderDrugList();
+    setOrbState(success ? "idle" : "error");
+  }
+}
+
+async function noteApiAuthFailure(message, raw) {
+  const blob = `${message || ""}\n${raw || ""}`;
+  const authFailure =
+    blob.includes("pharmacy_inactive") ||
+    blob.includes("ανενεργός") ||
+    blob.includes("pharmacy_unassigned") ||
+    blob.includes("unauthorized") ||
+    blob.includes("σύνδεση έληξε") ||
+    blob.includes("Απαιτείται σύνδεση") ||
+    isLicenseInactiveMessage(blob);
+  if (!authFailure) return false;
+  if (authMode === "login") {
+    try {
+      const gate = await invoke("get_auth_gate");
+      applyAuthGate(gate);
+    } catch (err) {
+      showLoginOverlay();
+    }
+    if (message) showLoginError(message);
+    return true;
+  }
+  return false;
+}
 
 function showActivationError(message) {
   if (!activationError) return;
@@ -516,6 +807,7 @@ async function waitForLayout() {
 }
 
 async function resizeWindow(sizeKey) {
+  if (!WINDOW || !LogicalSize) return;
   const size = SIZES[sizeKey];
 
   if (sizeKey === "collapsed") {
@@ -762,6 +1054,11 @@ function applyCachedDrugClick(drug) {
 async function handleLookupResult(lookupResult, barcode) {
   hideManualEntryRow();
 
+  if (await noteApiAuthFailure(lookupResult.miss_reason, "")) {
+    setOrbState("error");
+    return;
+  }
+
   if (isLicenseInactiveMessage(lookupResult.miss_reason)) {
     const status = await invoke("get_pharmacy_status");
     applyPharmacyStatus(status);
@@ -961,6 +1258,15 @@ async function requestRecommendation(drugId) {
       setTimeout(() => setOrbState("idle"), 400);
     } else {
       const msg = result?.error_message || result?.message || PRODUCT_NOT_FOUND_MESSAGE;
+      if (await noteApiAuthFailure(msg, result?.raw_response)) {
+        drug.errorMessage = msg;
+        drug.recommendation = null;
+        drug.status = "error";
+        setOrbState("error");
+        triggerFlash();
+        setTimeout(() => setOrbState("idle"), 650);
+        return;
+      }
       if (isLicenseInactiveMessage(msg) || isLicenseInactiveMessage(result?.raw_response)) {
         const status = await invoke("get_pharmacy_status");
         applyPharmacyStatus(status);
@@ -997,7 +1303,8 @@ async function requestRecommendation(drugId) {
 }
 
 async function processBarcode(rawBarcode) {
-  if (!pharmacyActivated || !pharmacyLicenseValid) return;
+  const legacyReady = authMode === "legacy" && pharmacyActivated && pharmacyLicenseValid;
+  if (!scansEnabled && !legacyReady) return;
   if (lookupInFlight) return;
 
   updateOrbScanDisplay(rawBarcode, "pending");
@@ -1044,6 +1351,9 @@ function setupDrag() {
     if (target.closest("#manual-name-input")) return;
     if (target.closest("#activation-key-input")) return;
     if (target.closest("#activation-submit-btn")) return;
+    if (target.closest("#login-overlay")) return;
+    if (target.closest("#settings-menu")) return;
+    if (target.closest("#logout-btn")) return;
     if (target.closest(".drug-name-btn")) return;
     if (target.closest(".drug-recommendation")) return;
     if (target.closest(".drug-side-effects")) return;
@@ -1051,7 +1361,7 @@ function setupDrag() {
 
     if (target.closest("[data-drag-region]")) {
       e.preventDefault();
-      WINDOW.startDragging();
+      WINDOW?.startDragging();
     }
   });
 }
@@ -1083,13 +1393,13 @@ function setupWindowChrome() {
   $("orb-minimize-btn").addEventListener("click", (e) => {
     e.stopPropagation();
     e.preventDefault();
-    WINDOW.minimize();
+    WINDOW?.minimize();
   });
 
   $("orb-close-btn").addEventListener("click", (e) => {
     e.stopPropagation();
     e.preventDefault();
-    WINDOW.close();
+    WINDOW?.close();
   });
 }
 
@@ -1127,8 +1437,20 @@ async function init() {
   setupProfileBadge();
   setupScanFallback();
   setupActivationOverlay();
+  setupLogin();
+  setupSettingsMenu();
 
-  await checkPharmacyOnStartup();
+  const preview = browserPreview();
+  if (preview) {
+    renderPreview(preview);
+    return;
+  }
+
+  const gate = await invoke("get_auth_gate");
+  applyAuthGate(gate);
+  if (gate?.mode === "legacy") {
+    await checkPharmacyOnStartup();
+  }
 
   // Profile badge hidden — default profile is PROD (env_config.rs)
   // const profile = await invoke("get_profile");
@@ -1160,3 +1482,37 @@ async function init() {
 }
 
 init();
+
+// LINUX_KEYSTROKE_SCAN
+(function setupLinuxKeystrokeScan() {
+  if (/Windows/i.test(navigator.userAgent)) return;
+
+  const thresholdMs = 400;
+  let buffer = "";
+  let lastAt = 0;
+
+  window.addEventListener("keydown", (e) => {
+    const tag = e.target?.tagName || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    const now = Date.now();
+    if (lastAt && now - lastAt > thresholdMs) buffer = "";
+    lastAt = now;
+
+    if (e.key === "Enter" || e.key === "Tab") {
+      const raw = buffer;
+      buffer = "";
+      if (raw.length > 3) {
+        e.preventDefault();
+        processBarcode(raw);
+      }
+      return;
+    }
+
+    if (e.key.length === 1 && /[0-9a-zA-Z]/.test(e.key)) {
+      buffer += e.key.toUpperCase();
+      e.preventDefault();
+    }
+  });
+})();

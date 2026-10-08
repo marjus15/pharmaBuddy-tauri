@@ -1,3 +1,4 @@
+mod auth_session;
 mod barcode_fallback;
 mod barcode_hook;
 mod catalog_cache;
@@ -62,6 +63,21 @@ async fn activate_pharmacy(license_key: String) -> Result<PharmacyStatus, String
     pharmacy_config::activate_pharmacy(license_key).await
 }
 
+#[tauri::command]
+async fn get_auth_gate() -> auth_session::AuthGate {
+    auth_session::current_gate().await
+}
+
+#[tauri::command]
+async fn login(identifier: String, password: String) -> auth_session::AuthGate {
+    auth_session::login(identifier, password).await
+}
+
+#[tauri::command]
+async fn logout() -> auth_session::AuthGate {
+    auth_session::logout().await
+}
+
 #[cfg(target_os = "windows")]
 fn configure_windows_window(window: &tauri::WebviewWindow) {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -94,6 +110,12 @@ pub fn run() {
                     env_config::app_log(&format!("[Hook] Failed to start: {err}"));
                 }
             }
+            tauri::async_runtime::spawn(async {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
+                    auth_session::refresh_if_due().await;
+                }
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -110,7 +132,10 @@ pub fn run() {
             get_profile,
             toggle_profile,
             get_pharmacy_status,
-            activate_pharmacy
+            activate_pharmacy,
+            get_auth_gate,
+            login,
+            logout
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
