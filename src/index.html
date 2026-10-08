@@ -112,6 +112,25 @@
         </form>
       </div>
 
+      <div
+        id="logout-confirm"
+        class="logout-confirm hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-hidden="true"
+        aria-labelledby="logout-confirm-text"
+      >
+        <div class="logout-confirm-card">
+          <p id="logout-confirm-text" class="logout-confirm-text">
+            Θέλετε να αποσυνδεθείτε; Θα χρειαστεί ξανά ο κωδικός.
+          </p>
+          <div class="logout-confirm-actions">
+            <button id="logout-cancel" class="logout-cancel" type="button">Άκυρο</button>
+            <button id="logout-confirm-btn" class="logout-confirm-btn" type="button">Αποσύνδεση</button>
+          </div>
+        </div>
+      </div>
+
       <div id="main-layout" class="main-layout">
 
         <div
@@ -184,6 +203,7 @@
                 <button id="report-menu-btn" class="report-menu-btn" type="button" role="menuitem">
                   Αναφορά προβλήματος
                 </button>
+                <div id="settings-logout-sep" class="settings-divider hidden" role="separator"></div>
                 <button id="logout-btn" class="logout-btn" type="button" role="menuitem">
                   Αποσύνδεση
                 </button>

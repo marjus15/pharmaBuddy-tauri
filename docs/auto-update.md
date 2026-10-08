@@ -2,7 +2,7 @@
 
 The widget uses the official Tauri v2 updater (`tauri-plugin-updater`) with the free minisign update key. This is not Windows code signing. SmartScreen still appears on the first install.
 
-The app checks GitHub Releases in the background when it starts, then about every 3 hours. It never installs or restarts during a shift. When a package has downloaded, the orb shows «Νέα έκδοση, θα εγκατασταθεί στο επόμενο άνοιγμα». The next time the pharmacist opens the app, the NSIS installer runs before the window opens (`/P /UPDATE /R`) and starts the new version.
+The app checks GitHub Releases in the background when it starts, then about every 3 hours. It never installs or restarts during a shift. When a package has downloaded, the orb shows one line under the pharmacy name: «↻ Νέα έκδοση στο επόμενο άνοιγμα». The next time the pharmacist opens the app, the NSIS installer runs before the window opens (`/P /UPDATE /R`) and starts the new version.
 
 The login session stays in Windows Credential Manager (or the app-data fallback file). The updater does not delete that file or the remembered username. Logs stay in `%LOCALAPPDATA%\pharmaBuddy`.
 

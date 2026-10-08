@@ -23,10 +23,10 @@ const WINDOW = tauri?.window?.getCurrentWindow ? tauri.window.getCurrentWindow()
 // the previous bug where long drug names got clipped past the left edge of the window.
 const SIZES = {
   collapsed: { width: 250, height: 288 },
-  collapsedNote: { width: 250, height: 336 },
+  collapsedNote: { width: 336, height: 324 },
   login: { width: 300, height: 400 },
   sidebar: { width: 500, height: 320 },
-  report: { width: 300, height: 420 },
+  report: { width: 340, height: 460 },
 };
 
 const WINDOW_LAYOUT_PADDING_Y = 24;
@@ -63,7 +63,12 @@ const settingsMenu = $("settings-menu");
 const settingsPharmacy = $("settings-pharmacy");
 const settingsEmail = $("settings-email");
 const logoutButton = $("logout-btn");
+const settingsLogoutSep = $("settings-logout-sep");
+const logoutConfirm = $("logout-confirm");
+const logoutCancel = $("logout-cancel");
+const logoutConfirmButton = $("logout-confirm-btn");
 const reportMenuButton = $("report-menu-btn");
+const orbDock = document.querySelector(".orb-dock");
 const reportOverlay = $("report-overlay");
 const reportForm = $("report-form");
 const reportMessage = $("report-message");
@@ -167,6 +172,7 @@ function hideLoginOverlay() {
 function setSettingsVisible(visible, { logout = false } = {}) {
   settingsButton?.classList.toggle("hidden", !visible);
   logoutButton?.classList.toggle("hidden", !logout);
+  settingsLogoutSep?.classList.toggle("hidden", !logout);
   if (!visible) closeSettingsMenu();
 }
 
@@ -213,7 +219,7 @@ function applyAuthGate(gate) {
     updatePharmacyFooter(gate.pharmacy_name || null);
     setSettingsVisible(true, { logout: true });
     setSettingsDetails(gate);
-    if (!sidebarOpen) resizeWindow("collapsed");
+    if (!sidebarOpen) resizeWindow(idleSizeKey());
     return;
   }
 
@@ -281,16 +287,23 @@ function setupSettingsMenu() {
     event.preventDefault();
     openReportPanel();
   });
-  logoutButton?.addEventListener("click", async (event) => {
+  logoutButton?.addEventListener("click", (event) => {
     event.stopPropagation();
     event.preventDefault();
-    closeSettingsMenu();
-    try {
-      const gate = await invoke("logout");
-      applyAuthGate(gate);
-    } catch (err) {
-      showLoginOverlay();
-      showLoginError(String(err));
+    openLogoutConfirm();
+  });
+  logoutCancel?.addEventListener("click", (event) => {
+    event.preventDefault();
+    closeLogoutConfirm();
+  });
+  logoutConfirmButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    void confirmLogout();
+  });
+  logoutConfirm?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLogoutConfirm();
     }
   });
   document.addEventListener("mousedown", (event) => {
@@ -302,42 +315,115 @@ function setupSettingsMenu() {
 }
 
 let reportReturnSize = "collapsed";
+let reportLocked = false;
 let updateUi = { note: false, installNow: false };
+
+function idleSizeKey() {
+  return updateUi.note ? "collapsedNote" : "collapsed";
+}
 
 function showUpdateNote(message) {
   updateUi = reduceUpdateUi(updateUi, { type: "downloaded" });
   if (!updateNote) return;
   updateNote.textContent = message || UPDATE_NOTE;
   updateNote.classList.remove("hidden");
-  if (!sidebarOpen && reportOverlay?.classList.contains("hidden")) {
+  orbDock?.classList.add("has-update-note");
+  if (!sidebarOpen && reportOverlay?.classList.contains("hidden") && logoutConfirm?.classList.contains("hidden")) {
     resizeWindow("collapsedNote");
+  }
+}
+
+function openLogoutConfirm() {
+  closeSettingsMenu();
+  if (!logoutConfirm) return;
+  logoutConfirm.classList.remove("hidden");
+  logoutConfirm.setAttribute("aria-hidden", "false");
+  logoutCancel?.focus();
+}
+
+function closeLogoutConfirm() {
+  if (!logoutConfirm) return;
+  logoutConfirm.classList.add("hidden");
+  logoutConfirm.setAttribute("aria-hidden", "true");
+}
+
+async function confirmLogout() {
+  closeLogoutConfirm();
+  try {
+    const gate = await invoke("logout");
+    applyAuthGate(gate);
+  } catch (err) {
+    showLoginOverlay();
+    showLoginError(String(err));
   }
 }
 
 function hideReportStatus() {
   if (!reportStatus) return;
-  reportStatus.textContent = "";
+  reportStatus.replaceChildren();
   reportStatus.classList.add("hidden");
   reportStatus.classList.remove("sent");
 }
 
+function resetReportComposer() {
+  reportLocked = false;
+  if (reportMessage) {
+    reportMessage.value = "";
+    reportMessage.readOnly = false;
+  }
+  hideReportStatus();
+  if (reportSend) {
+    reportSend.disabled = false;
+    reportSend.textContent = "Αποστολή";
+    reportSend.type = "submit";
+  }
+}
+
 function applyReportResult(result) {
   const status = reportStatusFor(result);
-  if (!reportStatus) return;
+  if (!reportStatus) return status;
+  if (status.kind === "sent") {
+    reportLocked = true;
+    const mark = document.createElement("span");
+    mark.className = "report-sent-mark";
+    mark.textContent = status.mark;
+    const code = document.createElement("span");
+    code.className = "report-sent-code";
+    code.textContent = status.codeLabel;
+    const hint = document.createElement("span");
+    hint.className = "report-sent-hint";
+    hint.textContent = status.hint;
+    reportStatus.replaceChildren(mark, code, hint);
+    reportStatus.classList.remove("hidden");
+    reportStatus.classList.add("sent");
+    if (reportMessage) reportMessage.readOnly = true;
+    if (reportSend) {
+      reportSend.disabled = false;
+      reportSend.textContent = status.buttonLabel;
+      reportSend.type = "button";
+    }
+    return status;
+  }
   reportStatus.textContent = status.text;
   reportStatus.classList.remove("hidden", "sent");
-  if (status.kind === "sent") reportStatus.classList.add("sent");
-  if (reportSend) reportSend.disabled = status.kind === "sent";
+  if (reportMessage) reportMessage.readOnly = false;
+  if (reportSend) {
+    reportSend.disabled = false;
+    reportSend.textContent = status.buttonLabel;
+    reportSend.type = "submit";
+  }
+  return status;
 }
 
 function openReportPanel() {
   if (!reportOverlay) return;
-  reportReturnSize = sidebarOpen ? "sidebar" : updateUi.note ? "collapsedNote" : "collapsed";
+  if (reportLocked) resetReportComposer();
+  reportReturnSize = sidebarOpen ? "sidebar" : idleSizeKey();
   closeSettingsMenu();
   reportOverlay.classList.remove("hidden");
   reportOverlay.setAttribute("aria-hidden", "false");
   resizeWindow("report");
-  reportMessage?.focus();
+  if (!reportMessage?.readOnly) reportMessage?.focus();
 }
 
 function closeReportPanel() {
@@ -375,26 +461,31 @@ async function submitReport(event) {
     if (reportMessage) reportMessage.value = draft;
   } finally {
     reportPending = false;
-    if (reportSend) {
+    if (reportSend && !reportStatus?.classList.contains("sent")) {
       reportSend.textContent = previousLabel || "Αποστολή";
-      if (!reportStatus?.classList.contains("sent")) reportSend.disabled = false;
+      reportSend.disabled = false;
+      reportSend.type = "submit";
     }
   }
 }
 
 function setupReport() {
   reportForm?.addEventListener("submit", (event) => {
+    if (reportStatus?.classList.contains("sent")) {
+      event.preventDefault();
+      closeReportPanel();
+      return;
+    }
     void submitReport(event);
+  });
+  reportSend?.addEventListener("click", (event) => {
+    if (!reportStatus?.classList.contains("sent")) return;
+    event.preventDefault();
+    closeReportPanel();
   });
   reportClose?.addEventListener("click", (event) => {
     event.preventDefault();
     closeReportPanel();
-  });
-  reportMessage?.addEventListener("input", () => {
-    if (reportSend && reportStatus?.classList.contains("sent")) {
-      reportSend.disabled = false;
-      hideReportStatus();
-    }
   });
 }
 
@@ -457,7 +548,7 @@ function renderPreview(params) {
     return;
   }
 
-  if (state === "logged-in" || state === "settings" || state === "update-ready") {
+  if (state === "logged-in" || state === "settings" || state === "update-ready" || state === "logout-confirm") {
     authMode = "login";
     scansEnabled = true;
     updatePharmacyFooter(pharmacy);
@@ -466,6 +557,7 @@ function renderPreview(params) {
     if (state === "settings") openSettingsMenu();
     else closeSettingsMenu();
     if (state === "update-ready") showUpdateNote(UPDATE_NOTE);
+    if (state === "logout-confirm") openLogoutConfirm();
     setOrbState("idle");
     return;
   }
@@ -1079,7 +1171,7 @@ async function collapseSidebar() {
   activeDrugId = null;
   drugList.innerHTML = "";
   hideManualEntryRow();
-  await resizeWindow("collapsed");
+  await resizeWindow(idleSizeKey());
 }
 
 function createDrugEntry(lookupResult, barcode) {

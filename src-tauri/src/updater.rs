@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::UpdaterExt;
 use zip::ZipArchive;
 
-pub const UPDATE_NOTE: &str = "Νέα έκδοση, θα εγκατασταθεί στο επόμενο άνοιγμα";
+pub const UPDATE_NOTE: &str = "↻ Νέα έκδοση στο επόμενο άνοιγμα";
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(3 * 60 * 60);
 pub const MIN_INSTALLER_BYTES: usize = 1024;
 
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn note_is_the_greek_line_and_pending_files_are_not_the_session() {
-        assert_eq!(UPDATE_NOTE, "Νέα έκδοση, θα εγκατασταθεί στο επόμενο άνοιγμα");
+        assert_eq!(UPDATE_NOTE, "↻ Νέα έκδοση στο επόμενο άνοιγμα");
         assert!(CHECK_INTERVAL >= Duration::from_secs(30 * 60));
         let (meta, bin) = pending_paths(Path::new("C:/Users/pharm/AppData/Local/pharmaBuddy"));
         assert!(meta.ends_with("updates/pending-update.json"));

@@ -1,31 +1,47 @@
 export const OFFLINE_MESSAGE = "Δεν υπάρχει σύνδεση στο internet";
-export const UPDATE_NOTE = "Νέα έκδοση, θα εγκατασταθεί στο επόμενο άνοιγμα";
-export const REPORT_SENT_PREFIX = "Στάλθηκε · #";
+export const UPDATE_NOTE = "↻ Νέα έκδοση στο επόμενο άνοιγμα";
+export const REPORT_SENT_MARK = "✓ Στάλθηκε";
+export const REPORT_SENT_HINT = "Αν τηλεφωνήσετε, πείτε αυτόν τον κωδικό.";
 
-export function formatReportSent(code) {
+export function formatReportCode(code) {
   const clean = String(code || "")
     .trim()
     .replace(/^#/, "")
     .toUpperCase();
-  return `${REPORT_SENT_PREFIX}${clean}`;
+  return `#${clean}`;
 }
 
 export function reportStatusFor(result) {
   if (result?.ok && result.reference_code) {
     return {
       kind: "sent",
-      text: formatReportSent(result.reference_code),
+      mark: REPORT_SENT_MARK,
+      codeLabel: `Κωδικός αναφοράς: ${formatReportCode(result.reference_code)}`,
+      hint: REPORT_SENT_HINT,
+      readOnly: true,
+      buttonLabel: "Κλείσιμο",
+      closeOnSend: true,
       keepDraft: true,
     };
   }
   const code = String(result?.error_code || "");
   const message = String(result?.error_message || "");
   if (code === "offline" || message === OFFLINE_MESSAGE) {
-    return { kind: "offline", text: OFFLINE_MESSAGE, keepDraft: true };
+    return {
+      kind: "offline",
+      text: OFFLINE_MESSAGE,
+      readOnly: false,
+      buttonLabel: "Αποστολή",
+      closeOnSend: false,
+      keepDraft: true,
+    };
   }
   return {
     kind: "error",
     text: message || "Η αναφορά δεν στάλθηκε. Δοκιμάστε ξανά.",
+    readOnly: false,
+    buttonLabel: "Αποστολή",
+    closeOnSend: false,
     keepDraft: true,
   };
 }

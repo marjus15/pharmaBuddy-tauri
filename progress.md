@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-08 — UI review on reports, update note, logout
+
+- The update line sits inside the glass card, under the pharmacy-name pill. Copy is «↻ Νέα έκδοση στο επόμενο άνοιγμα» at 12px, with no border of its own. The card and window grow while a download is waiting so the line is not clipped.
+- A sent report shows «✓ Στάλθηκε», a large monospace «Κωδικός αναφοράς: #…», and «Αν τηλεφωνήσετε, πείτε αυτόν τον κωδικό.» The note is read-only and the button is «Κλείσιμο». Opening the panel again starts empty.
+- «Αποσύνδεση» is separated from «Αναφορά προβλήματος» by a divider. Logout asks «Θέλετε να αποσυνδεθείτε; Θα χρειαστεί ξανά ο κωδικός.» with «Άκυρο» focused and «Αποσύνδεση» to confirm.
+
 ## 2026-10-08 — Problem reports, signed auto-update, two UI fixes
 
 - Gear menu «Αναφορά προβλήματος» opens a panel with optional «Τι έγινε;». Send uploads a redacted log tail, version, PROD/TEST, and OS. The edge function `submit-problem-report` stores it on `problem_reports` for the JWT's pharmacy and returns a phone code («Στάλθηκε · #…»). Offline keeps the text. TEST and `PHARMABUDDY_REQUIRE_LOGIN=false` save a local file instead of calling Supabase.
