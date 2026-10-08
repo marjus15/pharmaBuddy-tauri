@@ -1430,7 +1430,8 @@ body {
 .login-error {
   flex: 0 0 auto;
   box-sizing: border-box;
-  height: calc(1.35em * 3);
+  /* Four lines cover the inactive and unassigned messages. The slot stays this tall when empty. */
+  height: calc(1.35em * 4);
   margin: 4px 0 6px;
   overflow: hidden;
   font-size: 12px;

@@ -2,7 +2,7 @@
 
 The gear menu has «Αναφορά προβλήματος». One click opens a small panel. «Τι έγινε;» is optional. Send uploads the recent widget log (last session, capped at 48 KB), the app version, PROD or TEST, and the OS, tied to the signed-in pharmacy.
 
-After a successful send the panel shows «✓ Στάλθηκε», then «Κωδικός αναφοράς: #A2B3» in large type, and «Αν τηλεφωνήσετε, πείτε αυτόν τον κωδικό.» The note stays read-only and the button becomes «Κλείσιμο». Opening the panel again starts empty. The code is four characters, with no `0`, `O`, `1`, or `I`. No network shows «Δεν υπάρχει σύνδεση στο internet» and the text stays so they can retry. TEST, and a PROD build made with `PHARMABUDDY_REQUIRE_LOGIN=false`, do not call Supabase: they write `%LOCALAPPDATA%\pharmaBuddy\problem-reports\<code>.json` and still show a code.
+After a successful send the panel shows «✓ Στάλθηκε», then «Κωδικός αναφοράς: #A2B3» in large type, and «Πείτε αυτόν τον κωδικό στον υπεύθυνο του PharmaBuddy.» The note stays read-only and the button becomes «Κλείσιμο». Opening the panel again starts empty. The code is four characters, with no `0`, `O`, `1`, or `I`. No network shows «Δεν υπάρχει σύνδεση στο internet» and the text stays so they can retry. TEST, and a PROD build made with `PHARMABUDDY_REQUIRE_LOGIN=false`, do not call Supabase: they write `%LOCALAPPDATA%\pharmaBuddy\problem-reports\<code>.json` and still show a code.
 
 Passwords, bearer tokens, and JWTs are removed before anything is stored or uploaded. The edge function ignores any pharmacy id in the body and uses the user JWT.
 

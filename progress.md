@@ -1,14 +1,22 @@
 # Progress
 
+## 2026-10-08 — No support phone in the pilot
+
+- The inactive-account line is exactly «Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.»
+- An account with no pharmacy says «Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Αναφορά προβλήματος ή καλέστε τον υπεύθυνο του PharmaBuddy.»
+- A sent report says «Πείτε αυτόν τον κωδικό στον υπεύθυνο του PharmaBuddy.» There is no support number on that panel.
+- `PHARMABUDDY_SUPPORT_CONTACT` is gone from Rust, JS, `.env.example`, the compile-time env map, and the docs. The release workflow never baked that variable in.
+- The login error slot stays four lines tall so the longer inactive message fits and the card does not jump.
+
 ## 2026-10-08 — UI review on reports, update note, logout
 
 - The update line sits inside the glass card, under the pharmacy-name pill. Copy is «↻ Νέα έκδοση στο επόμενο άνοιγμα» at 12px, with no border of its own. The card and window grow while a download is waiting so the line is not clipped.
-- A sent report shows «✓ Στάλθηκε», a large monospace «Κωδικός αναφοράς: #…», and «Αν τηλεφωνήσετε, πείτε αυτόν τον κωδικό.» The note is read-only and the button is «Κλείσιμο». Opening the panel again starts empty.
+- A sent report shows «✓ Στάλθηκε», a large monospace «Κωδικός αναφοράς: #…», and a short hint under the code. The note is read-only and the button is «Κλείσιμο». Opening the panel again starts empty.
 - «Αποσύνδεση» is separated from «Αναφορά προβλήματος» by a divider. Logout asks «Θέλετε να αποσυνδεθείτε; Θα χρειαστεί ξανά ο κωδικός.» with «Άκυρο» focused and «Αποσύνδεση» to confirm.
 
 ## 2026-10-08 — Problem reports, signed auto-update, two UI fixes
 
-- Gear menu «Αναφορά προβλήματος» opens a panel with optional «Τι έγινε;». Send uploads a redacted log tail, version, PROD/TEST, and OS. The edge function `submit-problem-report` stores it on `problem_reports` for the JWT's pharmacy and returns a phone code («Στάλθηκε · #…»). Offline keeps the text. TEST and `PHARMABUDDY_REQUIRE_LOGIN=false` save a local file instead of calling Supabase.
+- Gear menu «Αναφορά προβλήματος» opens a panel with optional «Τι έγινε;». Send uploads a redacted log tail, version, PROD/TEST, and OS. The edge function `submit-problem-report` stores it on `problem_reports` for the JWT's pharmacy and returns a reference code («Στάλθηκε · #…»). Offline keeps the text. TEST and `PHARMABUDDY_REQUIRE_LOGIN=false` save a local file instead of calling Supabase.
 - Migration `supabase/migrations/20261008160000_problem_reports.sql` is not applied to the live project from this change. Steps are in `docs/problem-reports.md`.
 - Tauri updater checks in the background and only installs on the next launch. The orb shows «Νέα έκδοση, θα εγκατασταθεί στο επόμενο άνοιγμα». The release workflow signs with `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` and uploads `latest.json`. The pubkey in config is a placeholder until Marios generates a key. Backup builds do not auto-update. See `docs/auto-update.md`.
 - Login card no longer stretches the password-to-«Είσοδος» gap; the error line is three lines tall. The scan chip keeps 48px of padding so the × does not cover the barcode.
@@ -17,7 +25,7 @@
 
 - Login button stays «Είσοδος» (accented). While signing in it is disabled and reads «Σύνδεση…». Enter in the password field submits the form, and a second submit is ignored until the first finishes.
 - The login card is a fixed size. The error line keeps its space so wrong-password, offline, and inactive states do not move the card.
-- Inactive pharmacies show «επικοινωνήστε στο …». `PHARMABUDDY_SUPPORT_CONTACT` supplies the number. Until the real number is set, the placeholder is `69XX XXX XXX` (documented in `docs/pharmacy-login.md`).
+- Inactive pharmacies stay on the login card. The support-phone wording from this pass was removed the same day (see the entry above).
 - Subtitle is «Τα στοιχεία σύνδεσης σάς τα δίνει η PharmaBuddy.» The pharmacy name sits centered under «PharmaBuddy AI», inside the card, at 12px.
 - Recommendation and error panels use rounded corners on every side, with a gap before the orb. The SPC source line is 12px with higher contrast. The close control is 24px in the panel’s top-right corner.
 - A PROD catalog miss says «Το προϊόν δεν βρέθηκε στον κατάλογο. Σκανάρετε ξανά ή πληκτρολογήστε τον κωδικό.» TEST still uses its «Δοκιμαστικό» label. The error panel shows that message, not the raw API body.

@@ -1,5 +1,7 @@
 import {
+  INACTIVE_PHARMACY_MESSAGE,
   OFFLINE_MESSAGE,
+  UNASSIGNED_PHARMACY_MESSAGE,
   UPDATE_NOTE,
   reduceUpdateUi,
   reportStatusFor,
@@ -88,7 +90,6 @@ let authMode = "legacy";
 let scansEnabled = false;
 
 const BAD_CREDENTIALS_MESSAGE = "Λάθος στοιχεία";
-const DEFAULT_SUPPORT_CONTACT = "69XX\u00A0XXX\u00A0XXX";
 const REPORT_EXAMPLE =
   "Σκάναρα το ίδιο κουτί δύο φορές και έβγαλε ότι το προϊόν δεν υπάρχει. Ο κωδικός στο κουτί φαίνεται σωστός.";
 
@@ -130,11 +131,6 @@ const LICENSE_INACTIVE_MESSAGE =
   "Η άδεια χρήσης δεν είναι ενεργή. Επικοινωνήστε μαζί μας.";
 const LICENSE_RECONNECT_MESSAGE =
   "Απαιτείται σύνδεση στο διαδίκτυο για επαλήθευση της άδειας.";
-
-function inactivePharmacyMessage(contact) {
-  const who = String(contact || DEFAULT_SUPPORT_CONTACT).trim().replace(/\.+$/, "");
-  return `Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο ${who}.`;
-}
 
 function showLoginError(message) {
   if (!loginError) return;
@@ -518,7 +514,6 @@ function renderPreview(params) {
   const state = params.get("preview");
   const email = params.get("email") || "pilot@farmakeio.gr";
   const pharmacy = params.get("pharmacy") || "Φαρμακείο Παπαδόπουλος";
-  const contact = params.get("contact") || DEFAULT_SUPPORT_CONTACT;
   hideActivationOverlay();
   hideLoginOverlay();
   setSettingsVisible(false);
@@ -530,6 +525,7 @@ function renderPreview(params) {
     state === "login" ||
     state === "login-error" ||
     state === "login-inactive" ||
+    state === "login-unassigned" ||
     state === "login-offline" ||
     state === "login-loading"
   ) {
@@ -538,7 +534,8 @@ function renderPreview(params) {
     if (loginPassword && state !== "login") loginPassword.value = "secret-password";
     showLoginOverlay();
     if (state === "login-error") showLoginError(BAD_CREDENTIALS_MESSAGE);
-    if (state === "login-inactive") showLoginError(inactivePharmacyMessage(contact));
+    if (state === "login-inactive") showLoginError(INACTIVE_PHARMACY_MESSAGE);
+    if (state === "login-unassigned") showLoginError(UNASSIGNED_PHARMACY_MESSAGE);
     if (state === "login-offline") showLoginError(OFFLINE_MESSAGE);
     if (state === "login-loading" && loginSubmit) {
       loginPending = true;
