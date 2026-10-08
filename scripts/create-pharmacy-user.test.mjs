@@ -47,7 +47,7 @@ test("migration defines pharmacies, members, and rls", () => {
 });
 
 test("widget shows the three greek login errors", () => {
-  const js = readFileSync("src/main.js", "utf8");
+  const js = [readFileSync("src/main.js", "utf8"), readFileSync("src/widget-logic.mjs", "utf8")].join("\n");
   const html = readFileSync("src/index.html", "utf8");
   assert.match(js, /Λάθος στοιχεία/);
   assert.match(js, /Δεν υπάρχει σύνδεση στο internet/);

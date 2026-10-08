@@ -28,7 +28,8 @@ jobs:
         run: |
           npm install
 
-      # Required repo secrets: SUPABASE_FUNCTIONS_URL, SUPABASE_ANON_KEY
+      # Required repo secrets: SUPABASE_FUNCTIONS_URL, SUPABASE_ANON_KEY,
+      # TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
       - name: Verify release secrets
         shell: bash
         run: |
@@ -38,6 +39,14 @@ jobs:
           fi
           if [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
             echo "::error::Missing GitHub secret SUPABASE_ANON_KEY"
+            exit 1
+          fi
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "::error::Missing GitHub secret TAURI_SIGNING_PRIVATE_KEY"
+            exit 1
+          fi
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
+            echo "::error::Missing GitHub secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
             exit 1
           fi
 
@@ -55,6 +64,8 @@ jobs:
           SUPABASE_FUNCTIONS_URL: ${{ secrets.SUPABASE_FUNCTIONS_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           PHARMABUDDY_PROFILE: prod
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Rename installer to stable download name
         shell: powershell
@@ -69,16 +80,38 @@ jobs:
           if (Test-Path $target) {
             Remove-Item $target -Force
           }
-          Rename-Item -Path $source.FullName -NewName "pharmaBuddy_x64-setup.exe"
+          Copy-Item -Path $source.FullName -Destination $target
+
+      - name: Write latest.json for the updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          NSIS="src-tauri/target/release/bundle/nsis"
+          SIG=$(find "$NSIS" -name '*x64-setup.exe.sig' | head -n 1)
+          if [ -z "$SIG" ]; then
+            echo "::error::Updater signature not found. Check TAURI_SIGNING_PRIVATE_KEY."
+            exit 1
+          fi
+          EXE=$(basename "${SIG%.sig}")
+          VERSION="${{ steps.app_version.outputs.version }}"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${EXE}"
+          node scripts/write-latest-json.mjs \
+            --version "$VERSION" \
+            --signature-file "$SIG" \
+            --url "$URL" \
+            --out "$NSIS/latest.json"
 
       - name: Create GitHub release and upload installer
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.app_version.outputs.version }}
           name: PharmaBuddy v${{ steps.app_version.outputs.version }}
-          body: "Production build with embedded Supabase config. Install and scan — no manual setup required."
+          body: "Production build with embedded Supabase config. Install and scan — no manual setup required. The updater reads latest.json from this release."
           draft: false
           prerelease: false
           files: |
+            src-tauri/target/release/bundle/nsis/pharmaBuddy_*_x64-setup.exe
+            src-tauri/target/release/bundle/nsis/pharmaBuddy_*_x64-setup.exe.sig
             src-tauri/target/release/bundle/nsis/pharmaBuddy_x64-setup.exe
+            src-tauri/target/release/bundle/nsis/latest.json
           fail_on_unmatched_files: true
