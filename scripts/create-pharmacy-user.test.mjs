@@ -52,7 +52,7 @@ test("widget shows the three greek login errors", () => {
   assert.match(js, /Λάθος στοιχεία/);
   assert.match(js, /Δεν υπάρχει σύνδεση στο internet/);
   assert.match(js, /Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο/);
-  assert.match(js, /69XX XXX XXX/);
+  assert.match(js, /69XX\\u00A0XXX\\u00A0XXX/);
   assert.match(js, /Σύνδεση…/);
   assert.match(
     js,

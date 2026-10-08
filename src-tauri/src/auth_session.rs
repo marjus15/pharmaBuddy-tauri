@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const OFFLINE_MESSAGE: &str = "Δεν υπάρχει σύνδεση στο internet";
 pub const BAD_CREDENTIALS_MESSAGE: &str = "Λάθος στοιχεία";
-pub const DEFAULT_SUPPORT_CONTACT: &str = "69XX XXX XXX";
+pub const DEFAULT_SUPPORT_CONTACT: &str = "69XX\u{00A0}XXX\u{00A0}XXX";
 
 const KEYRING_SERVICE: &str = "gr.pharmabuddy.widget";
 const KEYRING_ACCOUNT: &str = "supabase-session";
@@ -1012,7 +1012,7 @@ mod tests {
     fn greek_auth_messages_match_the_widget() {
         assert_eq!(BAD_CREDENTIALS_MESSAGE, "Λάθος στοιχεία");
         assert_eq!(OFFLINE_MESSAGE, "Δεν υπάρχει σύνδεση στο internet");
-        assert_eq!(DEFAULT_SUPPORT_CONTACT, "69XX XXX XXX");
+        assert_eq!(DEFAULT_SUPPORT_CONTACT, "69XX\u{00A0}XXX\u{00A0}XXX");
         assert_eq!(
             inactive_pharmacy_message("210 000 0000"),
             "Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο 210 000 0000."

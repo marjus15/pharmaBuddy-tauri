@@ -67,7 +67,7 @@ let scansEnabled = false;
 
 const BAD_CREDENTIALS_MESSAGE = "Λάθος στοιχεία";
 const OFFLINE_MESSAGE = "Δεν υπάρχει σύνδεση στο internet";
-const DEFAULT_SUPPORT_CONTACT = "69XX XXX XXX";
+const DEFAULT_SUPPORT_CONTACT = "69XX\u00A0XXX\u00A0XXX";
 
 const MANUAL_ENTRY_BARCODE = "manual-entry";
 
