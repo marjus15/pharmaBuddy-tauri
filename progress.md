@@ -1,5 +1,18 @@
 # Progress
 
+## 2026-10-08 — UI review on reports, update note, logout
+
+- The update line sits inside the glass card, under the pharmacy-name pill. Copy is «↻ Νέα έκδοση στο επόμενο άνοιγμα» at 12px, with no border of its own. The card and window grow while a download is waiting so the line is not clipped.
+- A sent report shows «✓ Στάλθηκε», a large monospace «Κωδικός αναφοράς: #…», and «Αν τηλεφωνήσετε, πείτε αυτόν τον κωδικό.» The note is read-only and the button is «Κλείσιμο». Opening the panel again starts empty.
+- «Αποσύνδεση» is separated from «Αναφορά προβλήματος» by a divider. Logout asks «Θέλετε να αποσυνδεθείτε; Θα χρειαστεί ξανά ο κωδικός.» with «Άκυρο» focused and «Αποσύνδεση» to confirm.
+
+## 2026-10-08 — Problem reports, signed auto-update, two UI fixes
+
+- Gear menu «Αναφορά προβλήματος» opens a panel with optional «Τι έγινε;». Send uploads a redacted log tail, version, PROD/TEST, and OS. The edge function `submit-problem-report` stores it on `problem_reports` for the JWT's pharmacy and returns a phone code («Στάλθηκε · #…»). Offline keeps the text. TEST and `PHARMABUDDY_REQUIRE_LOGIN=false` save a local file instead of calling Supabase.
+- Migration `supabase/migrations/20261008160000_problem_reports.sql` is not applied to the live project from this change. Steps are in `docs/problem-reports.md`.
+- Tauri updater checks in the background and only installs on the next launch. The orb shows «Νέα έκδοση, θα εγκατασταθεί στο επόμενο άνοιγμα». The release workflow signs with `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` and uploads `latest.json`. The pubkey in config is a placeholder until Marios generates a key. Backup builds do not auto-update. See `docs/auto-update.md`.
+- Login card no longer stretches the password-to-«Είσοδος» gap; the error line is three lines tall. The scan chip keeps 48px of padding so the × does not cover the barcode.
+
 ## 2026-10-08 — Login and panel UI review
 
 - Login button stays «Είσοδος» (accented). While signing in it is disabled and reads «Σύνδεση…». Enter in the password field submits the form, and a second submit is ignored until the first finishes.

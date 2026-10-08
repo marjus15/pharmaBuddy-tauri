@@ -88,3 +88,5 @@ $env:PHARMABUDDY_REQUIRE_LOGIN = "false"
 ```
 
 That binary works with the **currently deployed** functions (before step 3). After you deploy the new functions, they reject the anon key unless you set the function secret `ALLOW_LEGACY_ANON=true`. Leave that secret unset once the login build is the one in the store. TEST builds never ask for a login, regardless of the flag.
+
+The backup build also skips auto-update, so it is not replaced by the login release. See [auto-update.md](auto-update.md). Problem reports are in [problem-reports.md](problem-reports.md).

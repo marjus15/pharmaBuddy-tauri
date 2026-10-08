@@ -1,3 +1,10 @@
+import {
+  OFFLINE_MESSAGE,
+  UPDATE_NOTE,
+  reduceUpdateUi,
+  reportStatusFor,
+} from "./widget-logic.mjs";
+
 const tauri = window.__TAURI__;
 const invoke = tauri?.core?.invoke
   ? tauri.core.invoke.bind(tauri.core)
@@ -16,8 +23,10 @@ const WINDOW = tauri?.window?.getCurrentWindow ? tauri.window.getCurrentWindow()
 // the previous bug where long drug names got clipped past the left edge of the window.
 const SIZES = {
   collapsed: { width: 250, height: 288 },
-  login: { width: 300, height: 460 },
+  collapsedNote: { width: 336, height: 324 },
+  login: { width: 300, height: 400 },
   sidebar: { width: 500, height: 320 },
+  report: { width: 340, height: 460 },
 };
 
 const WINDOW_LAYOUT_PADDING_Y = 24;
@@ -54,6 +63,19 @@ const settingsMenu = $("settings-menu");
 const settingsPharmacy = $("settings-pharmacy");
 const settingsEmail = $("settings-email");
 const logoutButton = $("logout-btn");
+const settingsLogoutSep = $("settings-logout-sep");
+const logoutConfirm = $("logout-confirm");
+const logoutCancel = $("logout-cancel");
+const logoutConfirmButton = $("logout-confirm-btn");
+const reportMenuButton = $("report-menu-btn");
+const orbDock = document.querySelector(".orb-dock");
+const reportOverlay = $("report-overlay");
+const reportForm = $("report-form");
+const reportMessage = $("report-message");
+const reportStatus = $("report-status");
+const reportSend = $("report-send");
+const reportClose = $("report-close");
+const updateNote = $("update-note");
 
 let lastHookBuffer = "";
 let lastAcceptedBarcode = "";
@@ -66,8 +88,9 @@ let authMode = "legacy";
 let scansEnabled = false;
 
 const BAD_CREDENTIALS_MESSAGE = "Λάθος στοιχεία";
-const OFFLINE_MESSAGE = "Δεν υπάρχει σύνδεση στο internet";
 const DEFAULT_SUPPORT_CONTACT = "69XX\u00A0XXX\u00A0XXX";
+const REPORT_EXAMPLE =
+  "Σκάναρα το ίδιο κουτί δύο φορές και έβγαλε ότι το προϊόν δεν υπάρχει. Ο κωδικός στο κουτί φαίνεται σωστός.";
 
 const MANUAL_ENTRY_BARCODE = "manual-entry";
 
@@ -146,8 +169,10 @@ function hideLoginOverlay() {
   loginPasswordToggle?.setAttribute("aria-label", "Εμφάνιση κωδικού");
 }
 
-function setSettingsVisible(visible) {
+function setSettingsVisible(visible, { logout = false } = {}) {
   settingsButton?.classList.toggle("hidden", !visible);
+  logoutButton?.classList.toggle("hidden", !logout);
+  settingsLogoutSep?.classList.toggle("hidden", !logout);
   if (!visible) closeSettingsMenu();
 }
 
@@ -173,7 +198,8 @@ function applyAuthGate(gate) {
     hideLoginOverlay();
     hideActivationOverlay();
     updatePharmacyFooter(null);
-    setSettingsVisible(false);
+    setSettingsDetails({});
+    setSettingsVisible(true, { logout: false });
     return;
   }
   if (authMode === "legacy") {
@@ -191,9 +217,9 @@ function applyAuthGate(gate) {
     scansEnabled = true;
     hideLoginOverlay();
     updatePharmacyFooter(gate.pharmacy_name || null);
-    setSettingsVisible(true);
+    setSettingsVisible(true, { logout: true });
     setSettingsDetails(gate);
-    if (!sidebarOpen) resizeWindow("collapsed");
+    if (!sidebarOpen) resizeWindow(idleSizeKey());
     return;
   }
 
@@ -256,16 +282,28 @@ function setupSettingsMenu() {
     if (settingsMenu?.classList.contains("hidden")) openSettingsMenu();
     else closeSettingsMenu();
   });
-  logoutButton?.addEventListener("click", async (event) => {
+  reportMenuButton?.addEventListener("click", (event) => {
     event.stopPropagation();
     event.preventDefault();
-    closeSettingsMenu();
-    try {
-      const gate = await invoke("logout");
-      applyAuthGate(gate);
-    } catch (err) {
-      showLoginOverlay();
-      showLoginError(String(err));
+    openReportPanel();
+  });
+  logoutButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    openLogoutConfirm();
+  });
+  logoutCancel?.addEventListener("click", (event) => {
+    event.preventDefault();
+    closeLogoutConfirm();
+  });
+  logoutConfirmButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    void confirmLogout();
+  });
+  logoutConfirm?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLogoutConfirm();
     }
   });
   document.addEventListener("mousedown", (event) => {
@@ -276,9 +314,200 @@ function setupSettingsMenu() {
   });
 }
 
+let reportReturnSize = "collapsed";
+let reportLocked = false;
+let updateUi = { note: false, installNow: false };
+
+function idleSizeKey() {
+  return updateUi.note ? "collapsedNote" : "collapsed";
+}
+
+function showUpdateNote(message) {
+  updateUi = reduceUpdateUi(updateUi, { type: "downloaded" });
+  if (!updateNote) return;
+  updateNote.textContent = message || UPDATE_NOTE;
+  updateNote.classList.remove("hidden");
+  orbDock?.classList.add("has-update-note");
+  if (!sidebarOpen && reportOverlay?.classList.contains("hidden") && logoutConfirm?.classList.contains("hidden")) {
+    resizeWindow("collapsedNote");
+  }
+}
+
+function openLogoutConfirm() {
+  closeSettingsMenu();
+  if (!logoutConfirm) return;
+  logoutConfirm.classList.remove("hidden");
+  logoutConfirm.setAttribute("aria-hidden", "false");
+  logoutCancel?.focus();
+}
+
+function closeLogoutConfirm() {
+  if (!logoutConfirm) return;
+  logoutConfirm.classList.add("hidden");
+  logoutConfirm.setAttribute("aria-hidden", "true");
+}
+
+async function confirmLogout() {
+  closeLogoutConfirm();
+  try {
+    const gate = await invoke("logout");
+    applyAuthGate(gate);
+  } catch (err) {
+    showLoginOverlay();
+    showLoginError(String(err));
+  }
+}
+
+function hideReportStatus() {
+  if (!reportStatus) return;
+  reportStatus.replaceChildren();
+  reportStatus.classList.add("hidden");
+  reportStatus.classList.remove("sent");
+}
+
+function resetReportComposer() {
+  reportLocked = false;
+  if (reportMessage) {
+    reportMessage.value = "";
+    reportMessage.readOnly = false;
+  }
+  hideReportStatus();
+  if (reportSend) {
+    reportSend.disabled = false;
+    reportSend.textContent = "Αποστολή";
+    reportSend.type = "submit";
+  }
+}
+
+function applyReportResult(result) {
+  const status = reportStatusFor(result);
+  if (!reportStatus) return status;
+  if (status.kind === "sent") {
+    reportLocked = true;
+    const mark = document.createElement("span");
+    mark.className = "report-sent-mark";
+    mark.textContent = status.mark;
+    const code = document.createElement("span");
+    code.className = "report-sent-code";
+    code.textContent = status.codeLabel;
+    const hint = document.createElement("span");
+    hint.className = "report-sent-hint";
+    hint.textContent = status.hint;
+    reportStatus.replaceChildren(mark, code, hint);
+    reportStatus.classList.remove("hidden");
+    reportStatus.classList.add("sent");
+    if (reportMessage) reportMessage.readOnly = true;
+    if (reportSend) {
+      reportSend.disabled = false;
+      reportSend.textContent = status.buttonLabel;
+      reportSend.type = "button";
+    }
+    return status;
+  }
+  reportStatus.textContent = status.text;
+  reportStatus.classList.remove("hidden", "sent");
+  if (reportMessage) reportMessage.readOnly = false;
+  if (reportSend) {
+    reportSend.disabled = false;
+    reportSend.textContent = status.buttonLabel;
+    reportSend.type = "submit";
+  }
+  return status;
+}
+
+function openReportPanel() {
+  if (!reportOverlay) return;
+  if (reportLocked) resetReportComposer();
+  reportReturnSize = sidebarOpen ? "sidebar" : idleSizeKey();
+  closeSettingsMenu();
+  reportOverlay.classList.remove("hidden");
+  reportOverlay.setAttribute("aria-hidden", "false");
+  resizeWindow("report");
+  if (!reportMessage?.readOnly) reportMessage?.focus();
+}
+
+function closeReportPanel() {
+  if (!reportOverlay) return;
+  reportOverlay.classList.add("hidden");
+  reportOverlay.setAttribute("aria-hidden", "true");
+  resizeWindow(reportReturnSize);
+}
+
+let reportPending = false;
+
+async function submitReport(event) {
+  event?.preventDefault();
+  if (!reportSend || reportPending || reportSend.disabled) return;
+  const draft = reportMessage?.value ?? "";
+  hideReportStatus();
+  reportPending = true;
+  reportSend.disabled = true;
+  const previousLabel = reportSend.textContent;
+  reportSend.textContent = "Αποστολή…";
+  try {
+    const result = await invoke("submit_problem_report", {
+      message: draft.trim() ? draft : null,
+    });
+    applyReportResult(result);
+    if (reportMessage && reportStatusFor(result).keepDraft) reportMessage.value = draft;
+  } catch (err) {
+    const text = String(err ?? "");
+    const offline = text.toLowerCase().includes("network") || text.includes(OFFLINE_MESSAGE);
+    applyReportResult({
+      ok: false,
+      error_code: offline ? "offline" : "server",
+      error_message: offline ? OFFLINE_MESSAGE : text || "Η αναφορά δεν στάλθηκε. Δοκιμάστε ξανά.",
+    });
+    if (reportMessage) reportMessage.value = draft;
+  } finally {
+    reportPending = false;
+    if (reportSend && !reportStatus?.classList.contains("sent")) {
+      reportSend.textContent = previousLabel || "Αποστολή";
+      reportSend.disabled = false;
+      reportSend.type = "submit";
+    }
+  }
+}
+
+function setupReport() {
+  reportForm?.addEventListener("submit", (event) => {
+    if (reportStatus?.classList.contains("sent")) {
+      event.preventDefault();
+      closeReportPanel();
+      return;
+    }
+    void submitReport(event);
+  });
+  reportSend?.addEventListener("click", (event) => {
+    if (!reportStatus?.classList.contains("sent")) return;
+    event.preventDefault();
+    closeReportPanel();
+  });
+  reportClose?.addEventListener("click", (event) => {
+    event.preventDefault();
+    closeReportPanel();
+  });
+}
+
+async function startUpdateWatch() {
+  try {
+    const notice = await invoke("get_update_notice");
+    if (notice) showUpdateNote(notice);
+  } catch (err) {
+    console.warn("[Update] status unavailable:", err);
+  }
+  await listen("update-ready", (event) => {
+    showUpdateNote(event?.payload?.message || UPDATE_NOTE);
+  });
+}
+
 function browserPreview() {
   if (window.__TAURI__?.core?.invoke) return null;
-  const raw = location.hash.startsWith("#") ? location.hash.slice(1) : "";
+  const raw = location.hash.startsWith("#")
+    ? location.hash.slice(1)
+    : location.search.startsWith("?")
+      ? location.search.slice(1)
+      : "";
   const params = new URLSearchParams(raw);
   if (!params.get("preview")) return null;
   return params;
@@ -319,18 +548,66 @@ function renderPreview(params) {
     return;
   }
 
-  if (state === "logged-in") {
+  if (state === "logged-in" || state === "settings" || state === "update-ready" || state === "logout-confirm") {
     authMode = "login";
     scansEnabled = true;
     updatePharmacyFooter(pharmacy);
-    setSettingsVisible(true);
+    setSettingsVisible(true, { logout: true });
+    setSettingsDetails({ pharmacy_name: pharmacy, email });
+    if (state === "settings") openSettingsMenu();
+    else closeSettingsMenu();
+    if (state === "update-ready") showUpdateNote(UPDATE_NOTE);
+    if (state === "logout-confirm") openLogoutConfirm();
+    setOrbState("idle");
+    return;
+  }
+
+  if (state === "report" || state === "report-filled" || state === "report-sent" || state === "report-offline") {
+    authMode = "login";
+    scansEnabled = true;
+    updatePharmacyFooter(pharmacy);
+    setSettingsVisible(true, { logout: true });
     setSettingsDetails({ pharmacy_name: pharmacy, email });
     closeSettingsMenu();
+    openReportPanel();
+    if (state === "report-filled" || state === "report-offline" || state === "report-sent") {
+      if (reportMessage) reportMessage.value = REPORT_EXAMPLE;
+    }
+    if (state === "report-sent") {
+      applyReportResult({ ok: true, reference_code: "A1B2" });
+    }
+    if (state === "report-offline") {
+      applyReportResult({ ok: false, error_code: "offline", error_message: OFFLINE_MESSAGE });
+    }
     setOrbState("idle");
     return;
   }
 
   if (state === "idle") {
+    setOrbState("idle");
+    return;
+  }
+
+  if (state === "scan-chip") {
+    const drug = {
+      id: "preview-chip",
+      barcode: "0000000000000",
+      found: false,
+      productName: "0000000000000",
+      activeIngredient: "",
+      atcCode: "",
+      sideEffects: null,
+      sideEffectsStatus: "idle",
+      recommendation: null,
+      errorMessage: null,
+      status: "idle",
+    };
+    scannedDrugs = [drug];
+    activeDrugId = null;
+    sidebarOpen = true;
+    drugSidebar.classList.remove("hidden");
+    drugSidebar.classList.add("visible");
+    renderDrugList();
     setOrbState("idle");
     return;
   }
@@ -830,7 +1107,7 @@ async function resizeWindow(sizeKey) {
   if (!WINDOW || !LogicalSize) return;
   const size = SIZES[sizeKey];
 
-  if (sizeKey === "collapsed") {
+  if (sizeKey === "collapsed" || sizeKey === "collapsedNote" || sizeKey === "report" || sizeKey === "login") {
     await WINDOW.setSize(new LogicalSize(size.width, size.height));
     return;
   }
@@ -894,7 +1171,7 @@ async function collapseSidebar() {
   activeDrugId = null;
   drugList.innerHTML = "";
   hideManualEntryRow();
-  await resizeWindow("collapsed");
+  await resizeWindow(idleSizeKey());
 }
 
 function createDrugEntry(lookupResult, barcode) {
@@ -1372,7 +1649,9 @@ function setupDrag() {
     if (target.closest("#activation-key-input")) return;
     if (target.closest("#activation-submit-btn")) return;
     if (target.closest("#login-overlay")) return;
+    if (target.closest("#report-overlay")) return;
     if (target.closest("#settings-menu")) return;
+    if (target.closest("#report-menu-btn")) return;
     if (target.closest("#logout-btn")) return;
     if (target.closest(".drug-name-btn")) return;
     if (target.closest(".drug-recommendation")) return;
@@ -1459,6 +1738,7 @@ async function init() {
   setupActivationOverlay();
   setupLogin();
   setupSettingsMenu();
+  setupReport();
 
   const preview = browserPreview();
   if (preview) {
@@ -1497,6 +1777,7 @@ async function init() {
 
   setOrbState("idle");
   await resizeWindow("collapsed");
+  void startUpdateWatch();
 
   console.log("[pharmaBuddy] Widget ready");
 }

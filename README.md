@@ -66,6 +66,8 @@ Output: `src-tauri/target/release/bundle/`
 
 Pharmacy accounts, deploy steps, and the kill switch are in [docs/pharmacy-login.md](docs/pharmacy-login.md). TEST profile does not ask for a login.
 
+Problem reports: [docs/problem-reports.md](docs/problem-reports.md). Signed auto-update: [docs/auto-update.md](docs/auto-update.md).
+
 Profile is also stored in `%LOCALAPPDATA%\pharmaBuddy\profile.txt` (shared with WinUI app). Click the **TEST** / **PROD** badge under the orb to toggle.
 
 ## Barcode input

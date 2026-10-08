@@ -7,8 +7,10 @@ mod env_config;
 mod eprescription;
 mod galinos;
 mod pharmacy_config;
+mod problem_report;
 mod recommendation;
 mod side_effects;
+mod updater;
 
 use pharmacy_config::PharmacyStatus;
 use recommendation::RecommendationDto;
@@ -78,6 +80,27 @@ async fn logout() -> auth_session::AuthGate {
     auth_session::logout().await
 }
 
+#[tauri::command]
+async fn submit_problem_report(
+    app: tauri::AppHandle,
+    message: Option<String>,
+) -> problem_report::ProblemReportResponse {
+    let version = app.package_info().version.to_string();
+    problem_report::submit(message, &version).await
+}
+
+#[tauri::command]
+fn get_update_notice() -> Option<String> {
+    if !updater::updates_enabled() {
+        return None;
+    }
+    updater::notice_for_pending(
+        &auth_session::app_data_dir(),
+        updater::current_version(),
+        true,
+    )
+}
+
 #[cfg(target_os = "windows")]
 fn configure_windows_window(window: &tauri::WebviewWindow) {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -98,9 +121,14 @@ fn configure_windows_window(window: &tauri::WebviewWindow) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_config::initialize();
+    // A package downloaded during an earlier shift installs now, before the window opens.
+    if updater::install_pending_on_launch() {
+        return;
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(target_os = "windows")]
@@ -110,6 +138,10 @@ pub fn run() {
                     env_config::app_log(&format!("[Hook] Failed to start: {err}"));
                 }
             }
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                updater::watch(handle).await;
+            });
             tauri::async_runtime::spawn(async {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
@@ -135,7 +167,9 @@ pub fn run() {
             activate_pharmacy,
             get_auth_gate,
             login,
-            logout
+            logout,
+            submit_problem_report,
+            get_update_notice
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

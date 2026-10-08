@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmaBuddy</title>
     <link rel="stylesheet" href="style.css" />
-    <script src="./main.js" defer></script>
+    <script src="./main.js" type="module"></script>
   </head>
   <body>
     <input
@@ -97,6 +97,40 @@
         </form>
       </div>
 
+      <div id="report-overlay" class="report-overlay hidden" aria-hidden="true">
+        <form id="report-form" class="report-panel">
+          <div class="report-head">
+            <p class="report-title">Αναφορά προβλήματος</p>
+            <button id="report-close" class="report-close" type="button" aria-label="Κλείσιμο">
+              ×
+            </button>
+          </div>
+          <label class="report-label" for="report-message">Τι έγινε;</label>
+          <textarea id="report-message" class="report-message" rows="4" maxlength="2000"></textarea>
+          <p id="report-status" class="report-status hidden" role="status"></p>
+          <button id="report-send" class="report-send" type="submit">Αποστολή</button>
+        </form>
+      </div>
+
+      <div
+        id="logout-confirm"
+        class="logout-confirm hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-hidden="true"
+        aria-labelledby="logout-confirm-text"
+      >
+        <div class="logout-confirm-card">
+          <p id="logout-confirm-text" class="logout-confirm-text">
+            Θέλετε να αποσυνδεθείτε; Θα χρειαστεί ξανά ο κωδικός.
+          </p>
+          <div class="logout-confirm-actions">
+            <button id="logout-cancel" class="logout-cancel" type="button">Άκυρο</button>
+            <button id="logout-confirm-btn" class="logout-confirm-btn" type="button">Αποσύνδεση</button>
+          </div>
+        </div>
+      </div>
+
       <div id="main-layout" class="main-layout">
 
         <div
@@ -166,6 +200,10 @@
               <div id="settings-menu" class="settings-menu hidden" role="menu">
                 <p id="settings-pharmacy" class="settings-pharmacy"></p>
                 <p id="settings-email" class="settings-email"></p>
+                <button id="report-menu-btn" class="report-menu-btn" type="button" role="menuitem">
+                  Αναφορά προβλήματος
+                </button>
+                <div id="settings-logout-sep" class="settings-divider hidden" role="separator"></div>
                 <button id="logout-btn" class="logout-btn" type="button" role="menuitem">
                   Αποσύνδεση
                 </button>
@@ -244,6 +282,7 @@
           <div class="orb-footer" data-drag-region>
             <p id="orb-label" class="orb-label">PharmaBuddy AI</p>
             <p id="orb-pharmacy-name" class="orb-pharmacy-name pharmacy-corner hidden"></p>
+            <p id="update-note" class="update-note hidden"></p>
             <!-- Debug: last scan status (hidden — re-enable for scanner troubleshooting)
             <p id="orb-scan-display" class="orb-scan-display" title="Τελευταίο scan">—</p>
             -->
