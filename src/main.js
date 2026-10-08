@@ -1118,6 +1118,42 @@ function setupScanFallback() {
   });
 }
 
+// LINUX_KEYSTROKE_SCAN
+// Linux has no global keyboard hook. Rapid keystrokes from fake-scan / xdotool
+// are buffered here the same way the Windows hook buffers scanner input.
+function setupLinuxKeystrokeScan() {
+  if (/Windows/i.test(navigator.userAgent)) return;
+
+  const thresholdMs = 400;
+  let buffer = "";
+  let lastAt = 0;
+
+  window.addEventListener("keydown", (e) => {
+    const tag = e.target?.tagName || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    const now = Date.now();
+    if (lastAt && now - lastAt > thresholdMs) buffer = "";
+    lastAt = now;
+
+    if (e.key === "Enter" || e.key === "Tab") {
+      const raw = buffer;
+      buffer = "";
+      if (raw.length > 3) {
+        e.preventDefault();
+        processBarcode(raw);
+      }
+      return;
+    }
+
+    if (e.key.length === 1 && /[0-9a-zA-Z]/.test(e.key)) {
+      buffer += e.key.toUpperCase();
+      e.preventDefault();
+    }
+  });
+}
+
 async function init() {
   console.log("[pharmaBuddy] Initializing...");
 
@@ -1126,6 +1162,7 @@ async function init() {
   setupPanelControls();
   setupProfileBadge();
   setupScanFallback();
+  setupLinuxKeystrokeScan();
   setupActivationOverlay();
 
   await checkPharmacyOnStartup();
