@@ -51,7 +51,16 @@ test("widget shows the three greek login errors", () => {
   const html = readFileSync("src/index.html", "utf8");
   assert.match(js, /Λάθος στοιχεία/);
   assert.match(js, /Δεν υπάρχει σύνδεση στο internet/);
-  assert.match(js, /Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε με/);
+  assert.match(js, /Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο/);
+  assert.match(js, /69XX XXX XXX/);
+  assert.match(js, /Σύνδεση…/);
+  assert.match(
+    js,
+    /Το προϊόν δεν βρέθηκε στον κατάλογο\. Σκανάρετε ξανά ή πληκτρολογήστε τον κωδικό\./,
+  );
+  assert.match(html, /Τα στοιχεία σύνδεσης σάς τα δίνει η PharmaBuddy\./);
+  assert.match(html, /Είσοδος/);
+  assert.equal(html.includes("Εισοδος"), false);
   assert.match(html, /login-password-toggle/);
   assert.match(html, /Αποσύνδεση/);
 });

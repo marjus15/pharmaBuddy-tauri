@@ -37,6 +37,25 @@ pub struct LookupResult {
     pub side_effects: Option<String>,
 }
 
+pub const CATALOG_NOT_FOUND_MESSAGE: &str =
+    "Το προϊόν δεν βρέθηκε στον κατάλογο. Σκανάρετε ξανά ή πληκτρολογήστε τον κωδικό.";
+
+/// PROD catalog misses should tell the pharmacist what to do next.
+/// TEST keeps its own «Δοκιμαστικό» wording and does not go through this helper.
+fn display_api_failure(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let catalog_miss = trimmed.is_empty()
+        || lower.contains("not found")
+        || lower.contains("product_not_found")
+        || trimmed == "Το προϊόν δεν βρέθηκε.";
+    if catalog_miss {
+        CATALOG_NOT_FOUND_MESSAGE.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn lookup_miss(miss_reason: impl Into<String>) -> LookupResult {
     LookupResult {
         found: false,
@@ -518,7 +537,7 @@ async fn get_prod_recommendation(
                 success: false,
                 product_name: None,
                 recommendation: None,
-                error_message: Some(msg.to_string()),
+                error_message: Some(display_api_failure(msg)),
                 raw_response: Some(body),
             };
         }
@@ -532,7 +551,7 @@ async fn get_prod_recommendation(
                 success: false,
                 product_name: None,
                 recommendation: None,
-                error_message: Some(msg.to_string()),
+                error_message: Some(display_api_failure(msg)),
                 raw_response: Some(body),
             };
         }
@@ -567,5 +586,25 @@ async fn get_prod_recommendation(
             error_message: Some(format!("Μη έγκυρη απάντηση JSON: {ex}")),
             raw_response: Some(body),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prod_catalog_miss_gives_a_next_step_without_the_test_label() {
+        let message = display_api_failure("Barcode not found in catalog.");
+        assert_eq!(message, CATALOG_NOT_FOUND_MESSAGE);
+        assert!(!message.contains("Δοκιμαστικό"));
+        assert_eq!(
+            display_api_failure("product_not_found"),
+            CATALOG_NOT_FOUND_MESSAGE
+        );
+        assert_eq!(
+            display_api_failure("Η άδεια χρήσης δεν είναι ενεργή."),
+            "Η άδεια χρήσης δεν είναι ενεργή."
+        );
     }
 }

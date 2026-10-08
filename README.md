@@ -62,7 +62,7 @@ Output: `src-tauri/target/release/bundle/`
 | `SUPABASE_FUNCTIONS_URL`           | Full edge function URL (prod only)                                                                                     |
 | `SUPABASE_ANON_KEY`                | Supabase anon key (prod only). With login on, the user JWT is the bearer token.                                       |
 | `PHARMABUDDY_REQUIRE_LOGIN`        | PROD login gate. Default `true`. Set `false` before build for the previous no-login widget.                           |
-| `PHARMABUDDY_SUPPORT_CONTACT`      | Contact text in the inactive-pharmacy message.                                                                         |
+| `PHARMABUDDY_SUPPORT_CONTACT`      | Phone in the inactive-pharmacy message («επικοινωνήστε στο …»). Default placeholder: `69XX XXX XXX`.                    |
 
 Pharmacy accounts, deploy steps, and the kill switch are in [docs/pharmacy-login.md](docs/pharmacy-login.md). TEST profile does not ask for a login.
 

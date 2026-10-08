@@ -28,7 +28,7 @@ Do this in order. These steps are not applied from the repo automatically.
    | `SUPABASE_FUNCTIONS_URL` | `https://<project>.supabase.co/functions/v1/get-ai-recommendation` |
    | `SUPABASE_ANON_KEY` | Public anon key. Sent as the `apikey` header. It is not the user session. |
    | `PHARMABUDDY_REQUIRE_LOGIN` | Default is login required. Set `false` only for a backup build (see below). |
-   | `PHARMABUDDY_SUPPORT_CONTACT` | Text after «επικοινωνήστε με». Default: `την υποστήριξη PharmaBuddy`. |
+   | `PHARMABUDDY_SUPPORT_CONTACT` | Phone number in the inactive-pharmacy message, after «επικοινωνήστε στο». Until the real number is provided, the default is the obvious placeholder `69XX XXX XXX`. |
    | `PHARMABUDDY_LOGIN_EMAIL_DOMAIN` | Optional. If the pharmacist types a username with no `@`, the widget appends `@<domain>`. |
 
    For a release binary, the same values can be baked in at compile time (`SUPABASE_FUNCTIONS_URL`, `SUPABASE_ANON_KEY`, `PHARMABUDDY_REQUIRE_LOGIN`, `PHARMABUDDY_SUPPORT_CONTACT`, `PHARMABUDDY_LOGIN_EMAIL_DOMAIN`).
@@ -53,9 +53,9 @@ node scripts/create-pharmacy-user.mjs `
 
 The script creates a confirmed auth user, a `pharmacies` row with `active = true`, and a `pharmacy_members` row. Give the pharmacy the email and password. The script does not print the password again.
 
-On the widget (PROD), the pharmacist enters that email and password. The pharmacy name appears at the lower left of the orb. Logout is under the gear menu, not on the orb itself. The username is remembered; the password is not.
+On the widget (PROD), the pharmacist enters that email and password. The pharmacy name appears centered under «PharmaBuddy AI», inside the orb card. Logout is under the gear menu, not on the orb itself. The username is remembered; the password is not.
 
-Wrong password shows «Λάθος στοιχεία». No network shows «Δεν υπάρχει σύνδεση στο internet». An inactive pharmacy shows «Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε με …» using `PHARMABUDDY_SUPPORT_CONTACT`.
+Wrong password shows «Λάθος στοιχεία». No network shows «Δεν υπάρχει σύνδεση στο internet». An inactive pharmacy shows «Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο …». The number comes from `PHARMABUDDY_SUPPORT_CONTACT`. If that variable is unset, the widget shows the placeholder `69XX XXX XXX` so it is obvious the real support number is not in the build yet. Set the real number before a store release, for example `PHARMABUDDY_SUPPORT_CONTACT=69XX XXX XXX` replaced with the live phone.
 
 ## Deactivate a pharmacy
 

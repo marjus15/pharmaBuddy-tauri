@@ -67,7 +67,7 @@ let scansEnabled = false;
 
 const BAD_CREDENTIALS_MESSAGE = "Λάθος στοιχεία";
 const OFFLINE_MESSAGE = "Δεν υπάρχει σύνδεση στο internet";
-const DEFAULT_SUPPORT_CONTACT = "την υποστήριξη PharmaBuddy";
+const DEFAULT_SUPPORT_CONTACT = "69XX XXX XXX";
 
 const MANUAL_ENTRY_BARCODE = "manual-entry";
 
@@ -100,7 +100,8 @@ const GREEK_LAYOUT_DIGIT_MAP = Object.freeze({
 const INVALID_SCAN_FORMAT_MESSAGE = "Μη έγκυρη μορφή barcode.";
 const NETWORK_ERROR_MESSAGE =
   "Αποτυχία σύνδεσης με Supabase. Ελέγξτε δίκτυο ή firewall και δοκιμάστε ξανά.";
-const PRODUCT_NOT_FOUND_MESSAGE = "Το προϊόν δεν βρέθηκε στη βάση δεδομένων.";
+const PRODUCT_NOT_FOUND_MESSAGE =
+  "Το προϊόν δεν βρέθηκε στον κατάλογο. Σκανάρετε ξανά ή πληκτρολογήστε τον κωδικό.";
 const LOOKUP_NO_RESULTS_MESSAGE = "Δεν βρέθηκαν αποτελέσματα.";
 const LICENSE_INACTIVE_MESSAGE =
   "Η άδεια χρήσης δεν είναι ενεργή. Επικοινωνήστε μαζί μας.";
@@ -109,7 +110,7 @@ const LICENSE_RECONNECT_MESSAGE =
 
 function inactivePharmacyMessage(contact) {
   const who = String(contact || DEFAULT_SUPPORT_CONTACT).trim().replace(/\.+$/, "");
-  return `Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε με ${who}.`;
+  return `Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο ${who}.`;
 }
 
 function showLoginError(message) {
@@ -204,9 +205,11 @@ function applyAuthGate(gate) {
   else clearLoginError();
 }
 
+let loginPending = false;
+
 async function submitLogin(event) {
   event?.preventDefault();
-  if (!loginSubmit) return;
+  if (!loginSubmit || loginPending) return;
   const identifier = loginIdentifier?.value?.trim() || "";
   const password = loginPassword?.value || "";
   if (!identifier || !password) {
@@ -214,6 +217,7 @@ async function submitLogin(event) {
     return;
   }
   clearLoginError();
+  loginPending = true;
   loginSubmit.disabled = true;
   loginSubmit.textContent = "Σύνδεση…";
   try {
@@ -224,6 +228,7 @@ async function submitLogin(event) {
     const text = String(err ?? "");
     showLoginError(text.toLowerCase().includes("network") ? OFFLINE_MESSAGE : text || OFFLINE_MESSAGE);
   } finally {
+    loginPending = false;
     loginSubmit.disabled = false;
     loginSubmit.textContent = "Είσοδος";
     if (loginPassword) loginPassword.value = "";
@@ -292,13 +297,25 @@ function renderPreview(params) {
   scansEnabled = false;
   authMode = "test";
 
-  if (state === "login" || state === "login-error" || state === "login-inactive") {
+  if (
+    state === "login" ||
+    state === "login-error" ||
+    state === "login-inactive" ||
+    state === "login-offline" ||
+    state === "login-loading"
+  ) {
     authMode = "login";
     if (loginIdentifier) loginIdentifier.value = email;
     if (loginPassword && state !== "login") loginPassword.value = "secret-password";
     showLoginOverlay();
     if (state === "login-error") showLoginError(BAD_CREDENTIALS_MESSAGE);
     if (state === "login-inactive") showLoginError(inactivePharmacyMessage(contact));
+    if (state === "login-offline") showLoginError(OFFLINE_MESSAGE);
+    if (state === "login-loading" && loginSubmit) {
+      loginPending = true;
+      loginSubmit.disabled = true;
+      loginSubmit.textContent = "Σύνδεση…";
+    }
     return;
   }
 
@@ -318,8 +335,9 @@ function renderPreview(params) {
     return;
   }
 
-  if (state === "scan-success" || state === "scan-error") {
+  if (state === "scan-success" || state === "scan-error" || state === "scan-not-found") {
     const success = state === "scan-success";
+    const prodMiss = state === "scan-not-found";
     const drug = {
       id: success ? "preview-success" : "preview-error",
       barcode: success ? "1111111111111" : "0000000000000",
@@ -336,7 +354,9 @@ function renderPreview(params) {
         : null,
       errorMessage: success
         ? null
-        : "Δοκιμαστικό σφάλμα — το προϊόν δεν βρέθηκε στον κατάλογο.",
+        : prodMiss
+          ? PRODUCT_NOT_FOUND_MESSAGE
+          : "Δοκιμαστικό σφάλμα — το προϊόν δεν βρέθηκε στον κατάλογο.",
       status: success ? "done" : "error",
     };
     scannedDrugs = [drug];
@@ -1278,7 +1298,7 @@ async function requestRecommendation(drugId) {
         setTimeout(() => setOrbState("idle"), 650);
         return;
       }
-      drug.errorMessage = result?.raw_response || msg;
+      drug.errorMessage = msg;
       drug.recommendation = null;
       drug.status = "error";
       setOrbState("error");

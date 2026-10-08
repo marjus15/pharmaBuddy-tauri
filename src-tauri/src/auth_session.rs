@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const OFFLINE_MESSAGE: &str = "Δεν υπάρχει σύνδεση στο internet";
 pub const BAD_CREDENTIALS_MESSAGE: &str = "Λάθος στοιχεία";
-pub const DEFAULT_SUPPORT_CONTACT: &str = "την υποστήριξη PharmaBuddy";
+pub const DEFAULT_SUPPORT_CONTACT: &str = "69XX XXX XXX";
 
 const KEYRING_SERVICE: &str = "gr.pharmabuddy.widget";
 const KEYRING_ACCOUNT: &str = "supabase-session";
@@ -103,7 +103,7 @@ pub fn inactive_pharmacy_message(contact: &str) -> String {
     } else {
         trimmed
     };
-    format!("Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε με {who}.")
+    format!("Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο {who}.")
 }
 
 pub fn unassigned_pharmacy_message(contact: &str) -> String {
@@ -113,7 +113,7 @@ pub fn unassigned_pharmacy_message(contact: &str) -> String {
     } else {
         trimmed
     };
-    format!("Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο, επικοινωνήστε με {who}.")
+    format!("Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο, επικοινωνήστε στο {who}.")
 }
 
 pub fn normalize_identifier(raw: &str, domain: Option<&str>) -> Result<String, AuthFailure> {
@@ -1012,13 +1012,14 @@ mod tests {
     fn greek_auth_messages_match_the_widget() {
         assert_eq!(BAD_CREDENTIALS_MESSAGE, "Λάθος στοιχεία");
         assert_eq!(OFFLINE_MESSAGE, "Δεν υπάρχει σύνδεση στο internet");
+        assert_eq!(DEFAULT_SUPPORT_CONTACT, "69XX XXX XXX");
         assert_eq!(
-            inactive_pharmacy_message("τον Μάριο"),
-            "Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε με τον Μάριο."
+            inactive_pharmacy_message("210 000 0000"),
+            "Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο 210 000 0000."
         );
         assert_eq!(
-            inactive_pharmacy_message("  την υποστήριξη PharmaBuddy. "),
-            "Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε με την υποστήριξη PharmaBuddy."
+            inactive_pharmacy_message("  69XX XXX XXX. "),
+            "Ο λογαριασμός του φαρμακείου είναι ανενεργός, επικοινωνήστε στο 69XX XXX XXX."
         );
     }
 

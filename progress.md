@@ -1,5 +1,14 @@
 # Progress
 
+## 2026-10-08 — Login and panel UI review
+
+- Login button stays «Είσοδος» (accented). While signing in it is disabled and reads «Σύνδεση…». Enter in the password field submits the form, and a second submit is ignored until the first finishes.
+- The login card is a fixed size. The error line keeps its space so wrong-password, offline, and inactive states do not move the card.
+- Inactive pharmacies show «επικοινωνήστε στο …». `PHARMABUDDY_SUPPORT_CONTACT` supplies the number. Until the real number is set, the placeholder is `69XX XXX XXX` (documented in `docs/pharmacy-login.md`).
+- Subtitle is «Τα στοιχεία σύνδεσης σάς τα δίνει η PharmaBuddy.» The pharmacy name sits centered under «PharmaBuddy AI», inside the card, at 12px.
+- Recommendation and error panels use rounded corners on every side, with a gap before the orb. The SPC source line is 12px with higher contrast. The close control is 24px in the panel’s top-right corner.
+- A PROD catalog miss says «Το προϊόν δεν βρέθηκε στον κατάλογο. Σκανάρετε ξανά ή πληκτρολογήστε τον κωδικό.» TEST still uses its «Δοκιμαστικό» label. The error panel shows that message, not the raw API body.
+
 ## 2026-10-08 — Per-pharmacy login
 
 - PROD shows a Greek login screen (email/username, password with eye toggle, remembered username) when there is no valid Supabase session. Logout sits in the gear menu. The pharmacy name is shown at the lower left of the orb.
