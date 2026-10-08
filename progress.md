@@ -1,9 +1,13 @@
 # Progress
 
+## 2026-10-08 — Unassigned login copy
+
+- The no-pharmacy line is exactly «Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.» The inactive-account line is unchanged.
+
 ## 2026-10-08 — No support phone in the pilot
 
 - The inactive-account line is exactly «Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.»
-- An account with no pharmacy says «Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Αναφορά προβλήματος ή καλέστε τον υπεύθυνο του PharmaBuddy.»
+- An account with no pharmacy says «Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.»
 - A sent report says «Πείτε αυτόν τον κωδικό στον υπεύθυνο του PharmaBuddy.» There is no support number on that panel.
 - `PHARMABUDDY_SUPPORT_CONTACT` is gone from Rust, JS, `.env.example`, the compile-time env map, and the docs. The release workflow never baked that variable in.
 - The login error slot stays four lines tall so the longer inactive message fits and the card does not jump.

@@ -5,7 +5,7 @@ export const REPORT_SENT_HINT = "Πείτε αυτόν τον κωδικό στ�
 export const INACTIVE_PHARMACY_MESSAGE =
   "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 export const UNASSIGNED_PHARMACY_MESSAGE =
-  "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Αναφορά προβλήματος ή καλέστε τον υπεύθυνο του PharmaBuddy.";
+  "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 
 export function formatReportCode(code) {
   const clean = String(code || "")

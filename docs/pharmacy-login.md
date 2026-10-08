@@ -54,7 +54,7 @@ The script creates a confirmed auth user, a `pharmacies` row with `active = true
 
 On the widget (PROD), the pharmacist enters that email and password. The pharmacy name appears centered under «PharmaBuddy AI», inside the orb card. Logout is under the gear menu, not on the orb itself. The username is remembered; the password is not.
 
-Wrong password shows «Λάθος στοιχεία». No network shows «Δεν υπάρχει σύνδεση στο internet». An inactive pharmacy shows «Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.» There is no support phone in the pilot. An account that is not linked to a pharmacy shows «Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Αναφορά προβλήματος ή καλέστε τον υπεύθυνο του PharmaBuddy.»
+Wrong password shows «Λάθος στοιχεία». No network shows «Δεν υπάρχει σύνδεση στο internet». An inactive pharmacy shows «Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.» There is no support phone in the pilot. An account that is not linked to a pharmacy shows «Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.»
 
 ## Deactivate a pharmacy
 

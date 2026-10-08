@@ -62,7 +62,7 @@ test("widget shows the three greek login errors", () => {
   );
   assert.match(
     js,
-    /Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο\. Αναφορά προβλήματος ή καλέστε τον υπεύθυνο του PharmaBuddy\./,
+    /Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο\. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy\./,
   );
   assert.doesNotMatch(js, /69XX/);
   assert.doesNotMatch(js, /PHARMABUDDY_SUPPORT_CONTACT/);

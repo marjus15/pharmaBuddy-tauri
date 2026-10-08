@@ -13,7 +13,7 @@ pub const BAD_CREDENTIALS_MESSAGE: &str = "Λάθος στοιχεία";
 pub const INACTIVE_PHARMACY_MESSAGE: &str =
     "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 pub const UNASSIGNED_PHARMACY_MESSAGE: &str =
-    "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Αναφορά προβλήματος ή καλέστε τον υπεύθυνο του PharmaBuddy.";
+    "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 
 const KEYRING_SERVICE: &str = "gr.pharmabuddy.widget";
 const KEYRING_ACCOUNT: &str = "supabase-session";
@@ -1001,7 +1001,7 @@ mod tests {
         );
         assert_eq!(
             unassigned_pharmacy_message(),
-            "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Αναφορά προβλήματος ή καλέστε τον υπεύθυνο του PharmaBuddy."
+            "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy."
         );
         assert!(!inactive_pharmacy_message().chars().any(|ch| ch.is_ascii_digit()));
         assert!(!unassigned_pharmacy_message().chars().any(|ch| ch.is_ascii_digit()));
