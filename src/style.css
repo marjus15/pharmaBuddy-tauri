@@ -286,7 +286,8 @@ body {
   line-height: 26px;
 }
 
-.side-effects-more {
+.side-effects-more,
+.recommendation-more {
   display: flex;
   align-items: center;
   width: 100%;
@@ -305,8 +306,13 @@ body {
   cursor: pointer;
 }
 
-.side-effects-more:hover {
+.side-effects-more:hover,
+.recommendation-more:hover {
   background: rgba(242, 244, 247, 0.14);
+}
+
+.recommendation-more.is-hidden {
+  display: none;
 }
 
 .side-effects-note {
@@ -314,14 +320,13 @@ body {
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
-  color: #b0bccb;
+  color: #c9d6e4;
 }
 
 .drug-recommendation {
   width: 100%;
   max-width: 100%;
-  max-height: 220px;
-  overflow: hidden;
+  overflow: visible;
   padding: 10px 12px;
   background: rgba(14, 17, 22, 0.92);
   border: none;
@@ -334,15 +339,13 @@ body {
 }
 
 .drug-recommendation .recommendation-text {
-  display: -webkit-box;
+  display: block;
   margin: 0;
   font-size: 18px;
   line-height: 26px;
   color: #f2f4f7;
-  overflow: hidden;
+  overflow: visible;
   overflow-wrap: break-word;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
 }
 
 .drug-recommendation.error {
@@ -410,9 +413,9 @@ body {
 .recommendation-text {
   margin: 0;
   padding-right: 2px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #d0e0f0;
+  font-size: 18px;
+  line-height: 26px;
+  color: #f2f4f7;
   user-select: text;
   -webkit-user-select: text;
 }

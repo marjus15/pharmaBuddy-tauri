@@ -6,6 +6,7 @@ import {
   UPDATE_NOTE,
   reduceUpdateUi,
   reportStatusFor,
+  visibleRecommendation,
   visibleSideEffects,
 } from "./widget-logic.mjs";
 
@@ -625,7 +626,7 @@ function renderPreview(params) {
       sideEffectsStatus: "done",
       sideEffectsExpanded: false,
       recommendation: many
-        ? "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό για την εντερική χλωρίδα. Η διάρροια είναι συχνή με αυτή την αγωγή, και το προβιοτικό τη μειώνει στην πράξη."
+        ? "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό για την εντερική χλωρίδα. Η διάρροια είναι συχνή με αυτή την αγωγή. Το προβιοτικό την περιορίζει στην πράξη. Πάρτε το με ένα ποτήρι νερό, μακριά από το αντιβιοτικό."
         : null,
       errorMessage: null,
       status: many ? "done" : "idle",
@@ -1240,6 +1241,7 @@ function syncDrugItemElement(el, drug) {
   const moreBtn = el.querySelector(".side-effects-more");
   const recBlock = el.querySelector(".drug-recommendation");
   const recText = el.querySelector(".recommendation-text");
+  const recMore = el.querySelector(".recommendation-more");
 
   btn.textContent = shortDisplayName(drug.productName || drug.barcode);
   btn.title = drug.productName || drug.barcode;
@@ -1290,21 +1292,68 @@ function syncDrugItemElement(el, drug) {
 
   const isActive = drug.id === activeDrugId;
 
+  const showRecommendationMore = (label) => {
+    if (!label) {
+      recMore.textContent = "";
+      recMore.classList.add("is-hidden");
+      return;
+    }
+    recMore.textContent = label;
+    recMore.classList.remove("is-hidden");
+  };
+
   if (drug.status === "loading") {
-    recBlock.classList.remove("hidden", "error");
+    recBlock.classList.remove("hidden", "error", "is-expanded");
     recText.textContent = "Αναμονή πρότασης…";
+    showRecommendationMore("");
   } else if (isActive && drug.status === "done" && drug.recommendation) {
+    const recommendation = visibleRecommendation(drug.recommendation, {
+      expanded: Boolean(drug.recommendationExpanded),
+      fits: recommendationFitsThreeLines,
+    });
     recBlock.classList.remove("hidden", "error");
-    recText.textContent = drug.recommendation;
+    recBlock.classList.toggle("is-expanded", Boolean(drug.recommendationExpanded));
+    recText.textContent = recommendation.text;
+    showRecommendationMore(recommendation.moreLabel);
   } else if (isActive && drug.status === "error" && drug.errorMessage) {
-    recBlock.classList.remove("hidden");
+    recBlock.classList.remove("hidden", "is-expanded");
     recBlock.classList.add("error");
     recText.textContent = drug.errorMessage;
+    showRecommendationMore("");
   } else {
     recBlock.classList.add("hidden");
-    recBlock.classList.remove("error");
+    recBlock.classList.remove("error", "is-expanded");
     recText.textContent = "";
+    showRecommendationMore("");
   }
+}
+
+const RECOMMENDATION_LINE_PX = 26;
+const RECOMMENDATION_TEXT_WIDTH = 336;
+
+function recommendationFitsThreeLines(text) {
+  const probe = document.createElement("p");
+  probe.className = "recommendation-text";
+  probe.textContent = text;
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.visibility = "hidden";
+  probe.style.display = "block";
+  probe.style.width = `${RECOMMENDATION_TEXT_WIDTH}px`;
+  probe.style.margin = "0";
+  probe.style.padding = "0";
+  probe.style.fontSize = "18px";
+  probe.style.lineHeight = `${RECOMMENDATION_LINE_PX}px`;
+  probe.style.whiteSpace = "normal";
+  document.body.appendChild(probe);
+  const height = probe.getBoundingClientRect().height;
+  probe.remove();
+  if (height < 1) {
+    const charsPerLine = Math.floor(RECOMMENDATION_TEXT_WIDTH / 9);
+    return text.length <= charsPerLine * 3;
+  }
+  return Math.round(height / RECOMMENDATION_LINE_PX) <= 3;
 }
 
 function collapseDrugRecommendation(drugId) {
@@ -1397,7 +1446,21 @@ function createDrugItemElement(drug) {
 
   const recText = document.createElement("p");
   recText.className = "recommendation-text";
+
+  const recMore = document.createElement("button");
+  recMore.type = "button";
+  recMore.className = "recommendation-more is-hidden";
+  recMore.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const current = findDrugById(drug.id);
+    if (!current) return;
+    current.recommendationExpanded = true;
+    renderDrugList();
+    void resizeWindow("sidebar");
+  });
+
   recBlock.appendChild(recText);
+  recBlock.appendChild(recMore);
 
   item.appendChild(btn);
   item.appendChild(effectsBlock);

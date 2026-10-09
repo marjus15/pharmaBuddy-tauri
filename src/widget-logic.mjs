@@ -382,6 +382,61 @@ export function sideEffectBullets(raw) {
   return fallback ? [fallback] : [];
 }
 
+export const RECOMMENDATION_MORE_LABEL = "+ περισσότερα";
+
+/** Complete sentences, keeping the closing punctuation on each one. */
+export function splitRecommendationSentences(raw) {
+  const text = String(raw ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return [];
+  const sentences = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const isStop = ch === "." || ch === "!" || ch === "?" || ch === "…" || ch === ";" || ch === "\u037E";
+    if (!isStop) continue;
+    const next = text[i + 1] || "";
+    if (next && !/\s/.test(next)) continue;
+    const sentence = text.slice(start, i + 1).trim();
+    if (sentence) sentences.push(sentence);
+    start = i + 1;
+  }
+  const tail = text.slice(start).trim();
+  if (tail) sentences.push(tail);
+  return sentences;
+}
+
+/**
+ * Collapsed view is whole sentences only: the first two when they fit in three
+ * lines, otherwise the longest complete prefix that fits. A sentence that is
+ * itself longer than three lines is shown whole. Expanded view is the full text.
+ */
+export function visibleRecommendation(raw, options = {}) {
+  const expanded = Boolean(options.expanded);
+  const fits = typeof options.fits === "function" ? options.fits : () => true;
+  const sentences = splitRecommendationSentences(raw);
+  const full = sentences.join(" ");
+  if (!full) return { text: "", more: false, moreLabel: "" };
+  if (expanded) return { text: full, more: false, moreLabel: "" };
+
+  let chosen = "";
+  const limit = Math.min(2, sentences.length);
+  for (let count = 1; count <= limit; count++) {
+    const candidate = sentences.slice(0, count).join(" ");
+    if (count > 1 && !fits(candidate)) break;
+    chosen = candidate;
+    if (count === 1 && !fits(candidate)) break;
+  }
+  if (!chosen) chosen = sentences[0];
+  const more = chosen !== full;
+  return {
+    text: chosen,
+    more,
+    moreLabel: more ? RECOMMENDATION_MORE_LABEL : "",
+  };
+}
+
 export function visibleSideEffects(raw, expanded = false) {
   const all = sideEffectBullets(raw);
   if (expanded) return { bullets: all, hiddenCount: 0, moreLabel: "" };

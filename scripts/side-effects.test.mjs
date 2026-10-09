@@ -2,10 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  RECOMMENDATION_MORE_LABEL,
   SIDE_EFFECT_VISIBLE_LIMIT,
   SIDE_EFFECTS_TRUST_LINE,
   sideEffectBullets,
   sideEffectsMoreLabel,
+  splitRecommendationSentences,
+  visibleRecommendation,
   visibleSideEffects,
 } from "../src/widget-logic.mjs";
 
@@ -105,16 +108,52 @@ test("pharmacist UI has no Galinos excerpt and uses the readable sidebar sizes",
   assert.match(css, /\.side-effects-list li\s*\{[^}]*line-height:\s*26px;/s);
   assert.match(css, /\.side-effects-list li\s*\{[^}]*white-space:\s*nowrap;/s);
   assert.match(css, /\.side-effects-note\s*\{[^}]*font-size:\s*13px;/s);
-  assert.match(css, /\.side-effects-more\s*\{[^}]*height:\s*32px;/s);
+  assert.match(css, /\.side-effects-note\s*\{[^}]*color:\s*#c9d6e4;/s);
+  assert.match(css, /\.side-effects-more,[\s\S]*?height:\s*32px;/);
   assert.match(css, /\.drug-side-effects\s*\{[^}]*max-height:\s*260px;/s);
   assert.match(css, /\.drug-side-effects\s*\{[^}]*overflow:\s*hidden;/s);
-  assert.match(css, /\.drug-recommendation\s*\{[^}]*max-height:\s*220px;/s);
-  assert.match(css, /\.drug-recommendation\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.drug-recommendation\s*\{[^}]*overflow:\s*visible;/s);
   assert.match(css, /\.recommendation-text\s*\{[^}]*font-size:\s*18px;/s);
   assert.match(css, /\.recommendation-text\s*\{[^}]*line-height:\s*26px;/s);
-  assert.match(css, /-webkit-line-clamp:\s*3;/);
+  assert.equal(/\.recommendation-text\s*\{[^}]*-webkit-line-clamp/.test(css), false);
   assert.equal(/\.drug-side-effects[^}]*overflow-y:\s*auto/s.test(css), false);
   assert.equal(/\.drug-recommendation[^}]*overflow-y:\s*auto/s.test(css), false);
+});
+
+test("recommendation shows whole sentences and a more row for the rest", () => {
+  const long =
+    "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό. Η διάρροια είναι συχνή. Το προβιοτικό την περιορίζει. Πάρτε το με νερό.";
+  assert.equal(splitRecommendationSentences(long).length, 4);
+  const twoFit = visibleRecommendation(long, { fits: () => true });
+  assert.equal(
+    twoFit.text,
+    "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό. Η διάρροια είναι συχνή.",
+  );
+  assert.equal(twoFit.text.endsWith("."), true);
+  assert.equal(twoFit.moreLabel, RECOMMENDATION_MORE_LABEL);
+  assert.equal(twoFit.moreLabel, "+ περισσότερα");
+
+  const onlyFirstFits = visibleRecommendation(long, {
+    fits: (text) => !text.includes("Η διάρροια"),
+  });
+  assert.equal(onlyFirstFits.text, "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό.");
+  assert.equal(onlyFirstFits.more, true);
+
+  const open = visibleRecommendation(long, { expanded: true, fits: () => false });
+  assert.equal(open.text, long);
+  assert.equal(open.more, false);
+
+  const oneLong = "Μία πολύ μεγάλη πρόταση που δεν χωράει σε τρεις γραμμές αλλά δεν κόβεται.";
+  const kept = visibleRecommendation(oneLong, { fits: () => false });
+  assert.equal(kept.text, oneLong);
+  assert.equal(kept.more, false);
+});
+
+test("the recommendation prompt asks for two short sentences", () => {
+  const source = readFileSync("supabase/functions/get-ai-recommendation/index.ts", "utf8");
+  assert.match(source, /Το πολύ 2 ολοκληρωμένες προτάσεις και περίπου 160 χαρακτήρες/);
+  assert.match(source, /Το πολύ 2 προτάσεις, περίπου 160 χαρακτήρες συνολικά/);
+  assert.match(source, /about 160 characters/);
 });
 
 test("the recommendation prompt may still mention one effect", () => {

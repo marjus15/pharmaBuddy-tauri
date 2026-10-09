@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-09 — Recommendation sentences and a lighter trust line
+
+- The recommendation no longer clips mid-word. The sidebar shows the first two whole sentences when they fit in three lines, otherwise the last complete sentence that fits. Longer text gets «+ περισσότερα», which expands in place. Old long answers are handled on the client.
+- `get-ai-recommendation` now asks for at most two sentences and about 160 characters. The function is changed in the repo only and is not deployed.
+- The trust line stays 13px and uses `#c9d6e4`, still muted and above 4.5:1 on the panel.
+
 ## 2026-10-09 — Side-effect bullets in the scan sidebar
 
 - The sidebar turns the stored side-effect excerpt into short one-line bullets (one effect each, common first, then serious). At most five show; the rest sit behind «+ ακόμη N» (32px), which expands in place.
