@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-10-09 — Typed drug name no longer reuses the previous scan
+
+- Typing a name after a scan (for example «zircos» after Augmentin) used to keep that scan’s barcode. Side effects were loaded from the barcode, so the new card showed Augmentin’s bullets, and the same barcode was sent to the catalog and the recommendation.
+- A typed name is looked up by that name. If nothing matches, the card says «Δεν βρέθηκαν πληροφορίες για αυτό το φάρμακο» with no bullets and no trust line.
+- A typed name is not written onto another product’s catalog row. Name-search results are not saved under a barcode. A session cache that already has a different name for that barcode is left as it is.
+- Scanned medicines still stack in scan order. The newest card keeps a cyan bar on the left of its name so it stays obvious. Replacing the previous card was not added.
+- No migration was run and Supabase was not changed. If a manual name was inserted under a scanned barcode before this fix, review the SQL in the pull request. Do not run it as an update.
+
 ## 2026-10-09 — Recommendation sentences and a lighter trust line
 
 - The recommendation no longer clips mid-word. The sidebar shows the first two whole sentences when they fit in three lines, otherwise the last complete sentence that fits. Longer text gets «+ περισσότερα», which expands in place. Old long answers are handled on the client.

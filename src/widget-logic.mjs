@@ -65,6 +65,42 @@ export function reduceUpdateUi(state, event) {
 export const SIDE_EFFECTS_TRUST_LINE =
   "Βοηθητικές πληροφορίες. Η τελική απόφαση ανήκει στον φαρμακοποιό.";
 
+/** Sentinel barcode for a typed name. It is not a GTIN and must not be written to the catalog. */
+export const MANUAL_ENTRY_BARCODE = "manual-entry";
+
+export const MANUAL_NAME_NOT_FOUND_MESSAGE = "Δεν βρέθηκαν πληροφορίες για αυτό το φάρμακο";
+
+function normalizeManualName(value) {
+  return String(value || "").trim().toLocaleLowerCase("el-GR");
+}
+
+/**
+ * Barcode to attach to a name the pharmacist typed.
+ * An unresolved scan (no card owns that barcode yet) keeps its own code.
+ * A barcode that already belongs to a different medicine is dropped, and so is
+ * the last accepted scan — a typed name is not that product.
+ */
+export function barcodeForManualName({ pendingBarcode, name, drugs }) {
+  const pending = String(pendingBarcode || "").trim();
+  const typed = normalizeManualName(name);
+  if (!pending || pending === MANUAL_ENTRY_BARCODE || !typed) {
+    return MANUAL_ENTRY_BARCODE;
+  }
+  const ownedByOtherProduct = (drugs || []).some((drug) => {
+    if (String(drug?.barcode || "") !== pending) return false;
+    const existing = normalizeManualName(drug?.productName);
+    return Boolean(existing) && existing !== typed;
+  });
+  if (ownedByOtherProduct) return MANUAL_ENTRY_BARCODE;
+  return pending;
+}
+
+/** The visit stack stays in scan order. The latest card is the last one. */
+export function latestDrugId(drugs) {
+  if (!Array.isArray(drugs) || drugs.length === 0) return null;
+  return drugs[drugs.length - 1]?.id ?? null;
+}
+
 export const SIDE_EFFECT_VISIBLE_LIMIT = 5;
 
 const MAX_BULLET_WORDS = 5;

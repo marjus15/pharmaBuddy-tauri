@@ -67,14 +67,66 @@ pub async fn lookup_by_search_query(query: &str) -> Option<String> {
 }
 
 fn urlencoding_query(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-            ' ' => "%20".to_string(),
-            _ => format!("%{:02X}", c as u32),
-        })
-        .collect()
+    let mut out = String::new();
+    for byte in value.as_bytes() {
+        match *byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char);
+            }
+            b' ' => out.push_str("%20"),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+fn normalize_drug_name(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        if ch.is_alphanumeric() {
+            for lower in ch.to_lowercase() {
+                out.push(lower);
+            }
+        } else if !out.ends_with(' ') {
+            out.push(' ');
+        }
+    }
+    out.trim().to_string()
+}
+
+/// True when two labels are the same medicine (typed name inside a package title, or equal).
+/// A short unrelated token such as «zircos» does not match «AUGMENTIN».
+pub fn names_refer_to_same_product(left: &str, right: &str) -> bool {
+    let a = normalize_drug_name(left);
+    let b = normalize_drug_name(right);
+    if a.chars().count() < 3 || b.chars().count() < 3 {
+        return false;
+    }
+    a == b || a.contains(&b) || b.contains(&a)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BarcodeHitDecision {
+    /// The package page belongs to the requested name (or no name was requested).
+    Use { cache: bool },
+    /// The package page is a different medicine. Do not show it and do not cache it.
+    Reject,
+}
+
+/// A barcode page may be shown for a typed name only when its title agrees.
+/// A page with no title is still the barcode's own page (scans), but it must not
+/// be stored under a name the pharmacist typed.
+pub fn barcode_hit_for_request(page_name: Option<&str>, requested: Option<&str>) -> BarcodeHitDecision {
+    let requested = requested.map(str::trim).filter(|name| !name.is_empty());
+    let page = page_name.map(str::trim).filter(|name| !name.is_empty());
+    match (page, requested) {
+        (Some(page), Some(requested)) if names_refer_to_same_product(page, requested) => {
+            BarcodeHitDecision::Use { cache: true }
+        }
+        (Some(_), Some(_)) => BarcodeHitDecision::Reject,
+        (Some(_), None) => BarcodeHitDecision::Use { cache: true },
+        (None, _) => BarcodeHitDecision::Use { cache: false },
+    }
 }
 
 pub async fn fetch_ok(client: &reqwest::Client, url: &str) -> Option<String> {
@@ -184,25 +236,52 @@ pub struct SideEffectHit {
     pub side_effects: String,
 }
 
-/// Public SPC excerpt ("Ανεπιθύμητες ενέργειες") for a scanned barcode.
-/// Falls back to a name search when the package page has no citation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SideEffectLookup {
+    pub hit: SideEffectHit,
+    /// True only when the excerpt came from this barcode's own package page
+    /// and the page title matches the requested name (when one was given).
+    pub cache_under_barcode: bool,
+}
+
+/// Public SPC excerpt ("Ανεπιθύμητες ενέργειες").
+/// A typed name (`name_only`) is searched as that name. A barcode page is used
+/// only when it is the same medicine; a different title is not reused.
 pub async fn lookup_side_effects(
     barcode: &str,
     product_name: Option<&str>,
-) -> Option<SideEffectHit> {
+    name_only: bool,
+) -> Option<SideEffectLookup> {
     let client = build_client()?;
+    let requested = product_name.map(str::trim).filter(|name| !name.is_empty());
 
-    if is_numeric_barcode(barcode) {
+    if !name_only && is_numeric_barcode(barcode) {
         if let Some(hit) = side_effects_from_barcode(&client, barcode).await {
-            return Some(hit);
+            match barcode_hit_for_request(hit.product_name.as_deref(), requested) {
+                BarcodeHitDecision::Use { cache } => {
+                    return Some(SideEffectLookup {
+                        hit,
+                        cache_under_barcode: cache,
+                    });
+                }
+                BarcodeHitDecision::Reject => {
+                    env_config::app_log(&format!(
+                        "[Galinos] barcode {barcode} is a different product than {requested:?}; not reusing it"
+                    ));
+                }
+            }
         }
     }
 
-    let query = product_name.unwrap_or("").trim();
+    let query = requested.unwrap_or("");
     if query.is_empty() {
         return None;
     }
-    side_effects_from_query(&client, query).await
+    let hit = side_effects_from_query(&client, query).await?;
+    Some(SideEffectLookup {
+        hit,
+        cache_under_barcode: false,
+    })
 }
 
 fn is_numeric_barcode(barcode: &str) -> bool {
@@ -238,9 +317,55 @@ async fn side_effects_from_query(client: &reqwest::Client, query: &str) -> Optio
     );
     env_config::app_log(&format!("[Galinos] side effects search {search_url}"));
     let html = fetch_ok(client, &search_url).await?;
-    let href = best_follow_href(&html)?;
+    let (href, link_text) = select_matching_link(&html, query)?;
     let page = fetch_ok(client, &absolute_galinos(&href)).await?;
-    side_effects_from_page(client, &page).await
+    let mut hit = side_effects_from_page(client, &page).await?;
+    let page_name = hit.product_name.clone().unwrap_or_default();
+    if !page_name.trim().is_empty() && !names_refer_to_same_product(query, &page_name) {
+        env_config::app_log(&format!(
+            "[Galinos] search for {query} opened a different product ({page_name})"
+        ));
+        return None;
+    }
+    if page_name.trim().is_empty() && names_refer_to_same_product(query, &link_text) {
+        hit.product_name = Some(link_text);
+    }
+    Some(hit)
+}
+
+/// First package (else drug) link whose label is the searched name.
+/// An unrelated earlier hit, such as the previous medicine, is ignored.
+pub fn select_matching_link(html: &str, query: &str) -> Option<(String, String)> {
+    let document = Html::parse_document(html);
+    let selector = Selector::parse("a[href]").ok()?;
+    let mut drug_link = None;
+    for element in document.select(&selector) {
+        let href = element.value().attr("href")?;
+        let text = element
+            .text()
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if text.chars().count() <= 2 {
+            continue;
+        }
+        let is_package = href.contains("/web/drugs/main/packages/");
+        let is_drug = href.contains("/web/drugs/main/drugs/");
+        if !is_package && !is_drug {
+            continue;
+        }
+        if !names_refer_to_same_product(query, &text) {
+            continue;
+        }
+        if is_package {
+            return Some((href.to_string(), text));
+        }
+        if drug_link.is_none() {
+            drug_link = Some((href.to_string(), text));
+        }
+    }
+    drug_link
 }
 
 async fn side_effects_from_page(client: &reqwest::Client, html: &str) -> Option<SideEffectHit> {
@@ -452,5 +577,62 @@ mod tests {
         assert_eq!(parse_atc_code(html).as_deref(), Some("C02KX04"));
         assert_eq!(parse_active_ingredients(html).as_deref(), Some("Μασιτεντάνη"));
         assert_eq!(parse_spc_path(html).as_deref(), Some("/web/drugs/main/citations/9"));
+    }
+
+    #[test]
+    fn encodes_greek_query_as_utf8() {
+        assert_eq!(urlencoding_query("zircos"), "zircos");
+        assert_eq!(urlencoding_query("a b"), "a%20b");
+        let encoded = urlencoding_query("Ντεπόν");
+        assert!(encoded.starts_with("%CE%9D"), "{encoded}");
+        assert!(!encoded.contains("%39D"), "{encoded}");
+    }
+
+    #[test]
+    fn typed_name_does_not_match_another_product() {
+        assert!(!names_refer_to_same_product("zircos", "AUGMENTIN F.C.TAB"));
+        assert!(names_refer_to_same_product("zircos", "ZIRCOS CAPS 10MG"));
+        assert!(names_refer_to_same_product(
+            "Augmentin",
+            "AUGMENTIN F.C.TAB (875+125)MG/TAB BTx12"
+        ));
+        assert!(!names_refer_to_same_product("ab", "abcd"));
+    }
+
+    #[test]
+    fn barcode_page_is_rejected_when_the_title_is_a_different_drug() {
+        assert_eq!(
+            barcode_hit_for_request(Some("AUGMENTIN F.C.TAB"), Some("zircos")),
+            BarcodeHitDecision::Reject
+        );
+        assert_eq!(
+            barcode_hit_for_request(Some("AUGMENTIN F.C.TAB"), Some("Augmentin")),
+            BarcodeHitDecision::Use { cache: true }
+        );
+        assert_eq!(
+            barcode_hit_for_request(None, Some("zircos")),
+            BarcodeHitDecision::Use { cache: false }
+        );
+        assert_eq!(
+            barcode_hit_for_request(Some("AUGMENTIN F.C.TAB"), None),
+            BarcodeHitDecision::Use { cache: true }
+        );
+    }
+
+    #[test]
+    fn name_search_skips_an_unrelated_first_hit() {
+        let html = r#"
+            <a href="/web/drugs/main/packages/111">AUGMENTIN F.C.TAB</a>
+            <a href="/web/drugs/main/packages/222">ZIRCOS CAPS</a>
+            <a href="/web/drugs/main/drugs/9">ZIRCOS</a>
+        "#;
+        let (href, text) = select_matching_link(html, "zircos").unwrap();
+        assert_eq!(href, "/web/drugs/main/packages/222");
+        assert_eq!(text, "ZIRCOS CAPS");
+        assert!(select_matching_link(html, "nosuchdrug").is_none());
+        assert_eq!(
+            parse_best_drug_result(html).as_deref(),
+            Some("AUGMENTIN F.C.TAB")
+        );
     }
 }

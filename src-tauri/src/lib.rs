@@ -36,8 +36,13 @@ async fn get_recommendation(
 }
 
 #[tauri::command]
-async fn fetch_side_effects(barcode: String, product_name: Option<String>) -> SideEffectsDto {
-    side_effects::fetch_side_effects(&barcode, product_name.as_deref()).await
+async fn fetch_side_effects(
+    barcode: String,
+    product_name: Option<String>,
+    name_only: Option<bool>,
+) -> SideEffectsDto {
+    side_effects::fetch_side_effects(&barcode, product_name.as_deref(), name_only.unwrap_or(false))
+        .await
 }
 
 #[tauri::command]

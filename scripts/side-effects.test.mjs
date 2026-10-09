@@ -2,9 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  MANUAL_ENTRY_BARCODE,
+  MANUAL_NAME_NOT_FOUND_MESSAGE,
   RECOMMENDATION_MORE_LABEL,
   SIDE_EFFECT_VISIBLE_LIMIT,
   SIDE_EFFECTS_TRUST_LINE,
+  barcodeForManualName,
+  latestDrugId,
   sideEffectBullets,
   sideEffectsMoreLabel,
   splitRecommendationSentences,
@@ -154,6 +158,77 @@ test("the recommendation prompt asks for two short sentences", () => {
   assert.match(source, /Το πολύ 2 ολοκληρωμένες προτάσεις και περίπου 160 χαρακτήρες/);
   assert.match(source, /Το πολύ 2 προτάσεις, περίπου 160 χαρακτήρες συνολικά/);
   assert.match(source, /about 160 characters/);
+});
+
+test("a typed name does not keep another medicine's barcode", () => {
+  const augmentin = {
+    id: "a",
+    barcode: "5201234567890",
+    productName: "AUGMENTIN F.C.TAB",
+  };
+  assert.equal(
+    barcodeForManualName({
+      pendingBarcode: "5201234567890",
+      name: "zircos",
+      drugs: [augmentin],
+    }),
+    MANUAL_ENTRY_BARCODE,
+  );
+  assert.equal(
+    barcodeForManualName({
+      pendingBarcode: "",
+      name: "zircos",
+      drugs: [augmentin],
+    }),
+    MANUAL_ENTRY_BARCODE,
+  );
+  assert.equal(
+    barcodeForManualName({
+      pendingBarcode: MANUAL_ENTRY_BARCODE,
+      name: "zircos",
+      drugs: [],
+    }),
+    MANUAL_ENTRY_BARCODE,
+  );
+  assert.equal(
+    barcodeForManualName({
+      pendingBarcode: "5209999999999",
+      name: "zircos",
+      drugs: [augmentin],
+    }),
+    "5209999999999",
+  );
+});
+
+test("the visit stack keeps scan order and marks the last card as latest", () => {
+  const drugs = [
+    { id: "augmentin", productName: "AUGMENTIN F.C.TAB" },
+    { id: "zircos", productName: "zircos" },
+  ];
+  assert.equal(latestDrugId(drugs), "zircos");
+  assert.equal(latestDrugId([]), null);
+  const main = readFileSync("src/main.js", "utf8");
+  assert.match(main, /scannedDrugs\.push\(drug\)/);
+  assert.equal(/scannedDrugs\.unshift\(/.test(main), false);
+  assert.match(main, /is-latest/);
+});
+
+test("a typed name with no match shows the empty sentence and does not reuse the last barcode", () => {
+  assert.equal(MANUAL_NAME_NOT_FOUND_MESSAGE, "Δεν βρέθηκαν πληροφορίες για αυτό το φάρμακο");
+  assert.equal(MANUAL_NAME_NOT_FOUND_MESSAGE.includes(SIDE_EFFECTS_TRUST_LINE), false);
+  const main = readFileSync("src/main.js", "utf8");
+  assert.equal(main.includes("pendingManualBarcode || lastAcceptedBarcode"), false);
+  assert.match(main, /barcodeForManualName\(/);
+  assert.match(main, /nameOnly: drug\.manualEntry === true/);
+  assert.match(main, /manualEntry: true/);
+  assert.match(main, /MANUAL_NAME_NOT_FOUND_MESSAGE/);
+  assert.match(main, /drug\.manualEntry && drug\.sideEffectsStatus === "empty"/);
+  const css = readFileSync("src/style.css", "utf8");
+  assert.match(css, /\.drug-item\.is-latest \.drug-name-btn/);
+  assert.match(
+    css,
+    /\.drug-side-effects\.is-missing \.side-effects-note[\s\S]*display:\s*none/,
+  );
 });
 
 test("the recommendation prompt may still mention one effect", () => {

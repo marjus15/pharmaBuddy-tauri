@@ -144,6 +144,15 @@ body {
   animation: drug-highlight 0.8s ease-out;
 }
 
+/* Newest card stays where it was added. The bar marks it after the flash fades. */
+.drug-item.is-latest .drug-name-btn {
+  box-shadow: inset 3px 0 0 #00e8ff, 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.drug-item.is-latest .drug-name-btn.active {
+  box-shadow: inset 3px 0 0 #00e8ff, 0 0 8px rgba(0, 232, 255, 0.3);
+}
+
 @keyframes drug-highlight {
   0% {
     box-shadow: 0 0 0 0 rgba(0, 232, 255, 0.6);
@@ -224,6 +233,17 @@ body {
 .drug-side-effects.loading .side-effects-more,
 .drug-side-effects.loading .side-effects-note {
   display: none;
+}
+
+.drug-side-effects.is-missing .side-effects-label,
+.drug-side-effects.is-missing .side-effects-list,
+.drug-side-effects.is-missing .side-effects-more,
+.drug-side-effects.is-missing .side-effects-note {
+  display: none;
+}
+
+.drug-side-effects.is-missing .side-effects-text {
+  margin-top: 0;
 }
 
 .side-effects-label,
