@@ -1,10 +1,12 @@
 import {
   INACTIVE_PHARMACY_MESSAGE,
   OFFLINE_MESSAGE,
+  SIDE_EFFECTS_TRUST_LINE,
   UNASSIGNED_PHARMACY_MESSAGE,
   UPDATE_NOTE,
   reduceUpdateUi,
   reportStatusFor,
+  visibleSideEffects,
 } from "./widget-logic.mjs";
 
 const tauri = window.__TAURI__;
@@ -19,15 +21,14 @@ const listen = tauri?.event?.listen
 const LogicalSize = tauri?.window?.LogicalSize;
 const WINDOW = tauri?.window?.getCurrentWindow ? tauri.window.getCurrentWindow() : null;
 
-// "sidebar" width is fixed on purpose (orb 250 + gap 12 + sidebar column 200 + app padding).
-// Bubbles inside the sidebar are capped at 100% of that fixed column (see style.css),
-// so the window never needs to be measured/resized based on text content — this avoids
-// the previous bug where long drug names got clipped past the left edge of the window.
+// Sidebar column is 360px (CSS max 400). Width stays fixed so long names wrap
+// inside the column instead of pushing the window: padding 24 + sidebar 360 + gap 14 + orb 250.
+const SIDEBAR_WINDOW_MAX_WIDTH = 688;
 const SIZES = {
   collapsed: { width: 250, height: 288 },
   collapsedNote: { width: 336, height: 324 },
   login: { width: 300, height: 400 },
-  sidebar: { width: 500, height: 320 },
+  sidebar: { width: 648, height: 320 },
   report: { width: 340, height: 460 },
 };
 
@@ -609,6 +610,36 @@ function renderPreview(params) {
     return;
   }
 
+  if (state === "side-effects-many" || state === "side-effects-few") {
+    const many = state === "side-effects-many";
+    const drug = {
+      id: many ? "preview-augmentin" : "preview-few",
+      barcode: many ? "5201234567890" : "5200000000002",
+      found: true,
+      productName: many ? "Augmentin" : "Algofren",
+      activeIngredient: many ? "Amoxicillin / Clavulanic acid" : "Ibuprofen",
+      atcCode: many ? "J01CR02" : "M01AE01",
+      sideEffects: many
+        ? "Περίληψη του προφίλ ασφάλειας. Οι συχνότερα αναφερόμενες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία, έμετος και δερματικό εξάνθημα. Οι ανεπιθύμητες ενέργειες ταξινομούνται κατά συχνότητα ως εξής: πολύ συχνές (≥1/10), συχνές (≥1/100 έως <1/10), όχι συχνές (≥1/1.000 έως <1/100), σπάνιες (≥1/10.000 έως <1/1.000), πολύ σπάνιες (<1/10.000). Λοιμώξεις και παρασιτώσεις Συχνές: καντιντίαση του δέρματος και των βλεννογόνων. Διαταραχές του ανοσοποιητικού συστήματος Σπάνιες: αναφυλαξία, αγγειοοίδημα. Διαταραχές του νευρικού συστήματος Όχι συχνές: κεφαλαλγία, ζάλη. Διαταραχές του γαστρεντερικού συστήματος Πολύ συχνές: διάρροια. Συχνές: ναυτία, έμετος, δυσπεψία, κοιλιακό άλγος. Διαταραχές του ήπατος Όχι συχνές: αύξηση ηπατικών ενζύμων. Σπάνιες: ηπατίτιδα. Διαταραχές του δέρματος Συχνές: κνησμός, κνίδωση."
+        : "Ήπια ναυτία, κεφαλαλγία και ζάλη.",
+      sideEffectsStatus: "done",
+      sideEffectsExpanded: false,
+      recommendation: many
+        ? "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό για την εντερική χλωρίδα. Η διάρροια είναι συχνή με αυτή την αγωγή, και το προβιοτικό τη μειώνει στην πράξη."
+        : null,
+      errorMessage: null,
+      status: many ? "done" : "idle",
+    };
+    scannedDrugs = [drug];
+    activeDrugId = many ? drug.id : null;
+    sidebarOpen = true;
+    drugSidebar.classList.remove("hidden");
+    drugSidebar.classList.add("visible");
+    renderDrugList();
+    setOrbState("idle");
+    return;
+  }
+
   if (state === "scan-success" || state === "scan-error" || state === "scan-not-found") {
     const success = state === "scan-success";
     const prodMiss = state === "scan-not-found";
@@ -1113,7 +1144,12 @@ async function resizeWindow(sizeKey) {
   const layout = $("main-layout");
   const contentHeight = (layout?.scrollHeight ?? 0) + WINDOW_LAYOUT_PADDING_Y;
   const height = Math.max(size.height, contentHeight);
-  await WINDOW.setSize(new LogicalSize(size.width, height));
+  let width = size.width;
+  if (sizeKey === "sidebar") {
+    const contentWidth = (layout?.scrollWidth ?? 0) + 24;
+    width = Math.min(SIDEBAR_WINDOW_MAX_WIDTH, Math.max(size.width, contentWidth));
+  }
+  await WINDOW.setSize(new LogicalSize(width, height));
 }
 
 async function writeClipboard(text) {
@@ -1200,6 +1236,8 @@ function syncDrugItemElement(el, drug) {
   const btn = el.querySelector(".drug-name-btn");
   const effectsBlock = el.querySelector(".drug-side-effects");
   const effectsText = el.querySelector(".side-effects-text");
+  const effectsList = el.querySelector(".side-effects-list");
+  const moreBtn = el.querySelector(".side-effects-more");
   const recBlock = el.querySelector(".drug-recommendation");
   const recText = el.querySelector(".recommendation-text");
 
@@ -1209,17 +1247,45 @@ function syncDrugItemElement(el, drug) {
   btn.classList.toggle("active", drug.id === activeDrugId);
   btn.classList.toggle("loading", drug.status === "loading");
 
-  if (drug.sideEffects) {
+  const view = visibleSideEffects(drug.sideEffects, Boolean(drug.sideEffectsExpanded));
+  if (view.bullets.length) {
     effectsBlock.classList.remove("hidden", "loading");
-    effectsText.textContent = drug.sideEffects;
+    effectsBlock.classList.toggle("is-expanded", Boolean(drug.sideEffectsExpanded));
+    effectsText.textContent = "";
+    effectsText.classList.add("is-hidden");
+    effectsList.classList.remove("is-hidden");
+    effectsList.replaceChildren(
+      ...view.bullets.map((text) => {
+        const li = document.createElement("li");
+        li.textContent = text;
+        return li;
+      }),
+    );
+    if (view.hiddenCount > 0) {
+      moreBtn.textContent = view.moreLabel;
+      moreBtn.classList.remove("is-hidden");
+    } else {
+      moreBtn.textContent = "";
+      moreBtn.classList.add("is-hidden");
+    }
   } else if (drug.sideEffectsStatus === "loading") {
-    effectsBlock.classList.remove("hidden");
+    effectsBlock.classList.remove("hidden", "is-expanded");
     effectsBlock.classList.add("loading");
     effectsText.textContent = "Αναζήτηση παρενεργειών…";
+    effectsText.classList.remove("is-hidden");
+    effectsList.replaceChildren();
+    effectsList.classList.add("is-hidden");
+    moreBtn.textContent = "";
+    moreBtn.classList.add("is-hidden");
   } else {
     effectsBlock.classList.add("hidden");
-    effectsBlock.classList.remove("loading");
+    effectsBlock.classList.remove("loading", "is-expanded");
     effectsText.textContent = "";
+    effectsText.classList.add("is-hidden");
+    effectsList.replaceChildren();
+    effectsList.classList.add("is-hidden");
+    moreBtn.textContent = "";
+    moreBtn.classList.add("is-hidden");
   }
 
   const isActive = drug.id === activeDrugId;
@@ -1299,15 +1365,32 @@ function createDrugItemElement(drug) {
   effectsLabel.textContent = "Παρενέργειες";
 
   const effectsText = document.createElement("p");
-  effectsText.className = "side-effects-text";
+  effectsText.className = "side-effects-text is-hidden";
 
-  const effectsSource = document.createElement("p");
-  effectsSource.className = "side-effects-source";
-  effectsSource.textContent = "Απόσπασμα ΠΧΠ · Γαληνός";
+  const effectsList = document.createElement("ul");
+  effectsList.className = "side-effects-list";
+
+  const moreBtn = document.createElement("button");
+  moreBtn.type = "button";
+  moreBtn.className = "side-effects-more is-hidden";
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const current = findDrugById(drug.id);
+    if (!current) return;
+    current.sideEffectsExpanded = true;
+    renderDrugList();
+    void resizeWindow("sidebar");
+  });
+
+  const effectsNote = document.createElement("p");
+  effectsNote.className = "side-effects-note";
+  effectsNote.textContent = SIDE_EFFECTS_TRUST_LINE;
 
   effectsBlock.appendChild(effectsLabel);
   effectsBlock.appendChild(effectsText);
-  effectsBlock.appendChild(effectsSource);
+  effectsBlock.appendChild(effectsList);
+  effectsBlock.appendChild(moreBtn);
+  effectsBlock.appendChild(effectsNote);
 
   const recBlock = document.createElement("div");
   recBlock.className = "drug-recommendation hidden";

@@ -35,7 +35,7 @@ body {
   height: 100%;
   overflow: hidden;
   background: transparent;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -71,19 +71,17 @@ body {
   width: 100%;
 }
 
-/* ── Drug sidebar (left of orb) — compact chat bubbles ──
-   Shrinks to its content (fit-content) so bubbles sit right next to the
-   orb, but is capped at max-width so long names wrap instead of clipping
-   the window. The row is right-anchored (justify-content: flex-end) so the
-   sidebar always hugs the orb regardless of how narrow the content is. */
+/* ── Drug sidebar (left of orb) ──
+   Fixed 360px column (max 400) so names and bullets wrap inside the panel.
+   The row stays right-anchored and hugs the orb. */
 .drug-sidebar {
   position: relative;
-  width: fit-content;
-  max-width: 210px;
+  width: 360px;
+  max-width: 400px;
   flex-shrink: 0;
   background: transparent;
   border: none;
-  padding: 0 4px 0 0;
+  padding: 0;
   opacity: 0;
   transform: translateX(-6px);
   transition: opacity 0.2s ease-out, transform 0.2s ease-out;
@@ -127,30 +125,17 @@ body {
 .drug-list {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 10px;
   width: 100%;
-  max-height: 340px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 2px 2px 2px 2px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 232, 255, 0.4) transparent;
-}
-
-.drug-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.drug-list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(0, 168, 216, 0.5);
+  overflow: visible;
+  padding: 2px 0;
 }
 
 .drug-item {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 6px;
   width: 100%;
 }
@@ -173,17 +158,17 @@ body {
 
 .drug-name-btn {
   display: -webkit-box;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   padding: 8px 12px;
   background: rgba(0, 74, 88, 0.95);
   border: none;
   border-radius: 14px;
-  color: #eefaff;
+  color: #f2f4f7;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 22px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 28px;
   text-align: left;
   cursor: pointer;
   -webkit-line-clamp: 2;
@@ -219,75 +204,129 @@ body {
 
 .drug-side-effects {
   width: 100%;
-  max-height: 108px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 8px 10px;
-  background: rgba(12, 22, 32, 0.92);
+  max-height: 260px;
+  overflow: hidden;
+  padding: 10px 12px;
+  background: rgba(14, 17, 22, 0.92);
   border-radius: 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+
+.drug-side-effects.is-expanded {
+  max-height: none;
 }
 
 .drug-side-effects.hidden {
   display: none;
 }
 
-.drug-side-effects.loading .side-effects-source {
+.drug-side-effects.loading .side-effects-list,
+.drug-side-effects.loading .side-effects-more,
+.drug-side-effects.loading .side-effects-note {
   display: none;
 }
 
 .side-effects-label,
-.side-effects-source,
-.side-effects-text {
+.side-effects-text,
+.side-effects-note {
   margin: 0;
 }
 
 .side-effects-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(0, 212, 255, 0.72);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #f2f4f7;
 }
 
 .side-effects-text {
-  margin-top: 3px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #c5d5e4;
+  margin-top: 4px;
+  font-size: 18px;
+  line-height: 26px;
+  color: #f2f4f7;
   user-select: text;
   -webkit-user-select: text;
 }
 
-.side-effects-source {
+.side-effects-text.is-hidden,
+.side-effects-list.is-hidden,
+.side-effects-more.is-hidden {
+  display: none;
+}
+
+.side-effects-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: #f2f4f7;
+}
+
+.side-effects-list li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 18px;
+  line-height: 26px;
+  height: 26px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.side-effects-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #f2f4f7;
+  font-size: 18px;
+  line-height: 26px;
+}
+
+.side-effects-more {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
   margin-top: 4px;
-  font-size: 12px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(242, 244, 247, 0.08);
+  color: #f2f4f7;
+  font-family: inherit;
+  font-size: 16px;
   font-weight: 600;
-  color: rgba(214, 228, 238, 0.92);
+  line-height: 32px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-effects-more:hover {
+  background: rgba(242, 244, 247, 0.14);
+}
+
+.side-effects-note {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  color: #b0bccb;
 }
 
 .drug-recommendation {
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
-  max-height: 200px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  max-height: 220px;
+  overflow: hidden;
   padding: 10px 12px;
-  background: rgba(20, 30, 40, 0.96);
+  background: rgba(14, 17, 22, 0.92);
   border: none;
   border-radius: 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 232, 255, 0.35) transparent;
-}
-
-.drug-recommendation::-webkit-scrollbar {
-  width: 4px;
-}
-
-.drug-recommendation::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(0, 168, 216, 0.5);
 }
 
 .drug-recommendation.hidden {
@@ -295,9 +334,15 @@ body {
 }
 
 .drug-recommendation .recommendation-text {
-  font-size: 14px;
-  line-height: 1.6;
+  display: -webkit-box;
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+  color: #f2f4f7;
+  overflow: hidden;
   overflow-wrap: break-word;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .drug-recommendation.error {
@@ -305,7 +350,7 @@ body {
 }
 
 .drug-recommendation.error .recommendation-text {
-  color: rgba(255, 180, 190, 0.95);
+  color: #ffd6de;
 }
 
 .manual-entry-row {

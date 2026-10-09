@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-10-09 — Side-effect bullets in the scan sidebar
+
+- The sidebar turns the stored side-effect excerpt into short one-line bullets (one effect each, common first, then serious). At most five show; the rest sit behind «+ ακόμη N» (32px), which expands in place.
+- The Galinos name, link, and «Απόσπασμα ΠΧΠ» line are gone from the pharmacist UI. Under the bullets: «Βοηθητικές πληροφορίες. Η τελική απόφαση ανήκει στον φαρμακοποιό.»
+- Medicine name is 22px/600. Bullets and the recommendation are 18px/26px. The section label is 14px/600 without uppercase. The trust line is 13px. The column is 360px (max 400). Side effects grow up to 260px and the recommendation up to 220px, clamped to three lines, with no inner scrollbar. The sidebar window is 648px wide and grows with the content.
+- Existing catalog text is split on the client. No edge function changed, and nothing was deployed. The recommendation prompt can still mention one effect.
+
 ## 2026-10-09 — First signed release (v0.2.0)
 
 - `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` is the minisign public key. The placeholder is gone.
