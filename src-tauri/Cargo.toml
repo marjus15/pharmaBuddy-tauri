@@ -1,6 +1,6 @@
 [package]
 name = "pharmabuddy-tauri"
-version = "0.1.0"
+version = "0.2.0"
 description = "PharmaBuddy AI orb desktop widget"
 authors = ["pharmaBuddy"]
 edition = "2021"

@@ -8,39 +8,16 @@ The login session stays in Windows Credential Manager (or the app-data fallback 
 
 A backup build compiled with `PHARMABUDDY_REQUIRE_LOGIN=false` does not check for updates and does not install a pending package. That keeps it from being replaced by the normal login release. TEST versus PROD is only the data profile; it does not change this.
 
-## 1. Generate the key pair once
+## 1. Key pair
 
-On your machine (Git Bash or PowerShell):
+The minisign key pair already exists. The pubkey is set in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`). That value is the minisign public key the app uses to verify `latest.json` and the signed installer. Do not replace it.
 
-```powershell
-cd pharmaBuddy-tauri
-npm install
-npx tauri signer generate -w $env:USERPROFILE\.tauri\pharmabuddy.key
-```
+The private key stays out of git:
 
-The command asks for a password. It writes:
+- `%USERPROFILE%\.tauri\pharmabuddy.key` — private key.
+- `%USERPROFILE%\.tauri\pharmabuddy.key.pub` — public key copy on the machine that generated it.
 
-- `%USERPROFILE%\.tauri\pharmabuddy.key` — private key. This never goes in git.
-- `%USERPROFILE%\.tauri\pharmabuddy.key.pub` — public key.
-
-The CLI also prints the public key string. That string is what the app expects.
-
-**Keep an offline backup of the private key and the password** (a USB drive that is not the pharmacy PC, or a password manager export). If you lose them, every pharmacy that already installed the app can no longer verify updates. You would have to hand them a new installer. Generating a new key does not fix old installs.
-
-The pubkey currently in `src-tauri/tauri.conf.json` is the placeholder `REPLACE_WITH_MINISIGN_PUBKEY`. Replace it with the public key the CLI printed:
-
-```json
-"plugins": {
-  "updater": {
-    "pubkey": "<paste the public key here>",
-    "endpoints": [
-      "https://github.com/marjus15/pharmaBuddy-tauri/releases/latest/download/latest.json"
-    ]
-  }
-}
-```
-
-Commit that pubkey change. Do not commit the `.key` file.
+**Keep an offline backup of the private key and the password** (a USB drive that is not the pharmacy PC, or a password manager export). If you lose them, every pharmacy that already installed the app can no longer verify updates. You would have to hand them a new installer. Generating a new key does not fix old installs. Do not commit the `.key` file.
 
 ## 2. GitHub secrets
 
@@ -69,7 +46,7 @@ The private key in GitHub is not a backup. If the GitHub secret is deleted, you 
 - `pharmaBuddy_x64-setup.exe` (same bytes, stable name for a manual download)
 - `latest.json`
 
-The tag must be new. If `v0.1.0` already exists, bump the version before merging.
+The first signed release tag is `v0.2.0`. The tag must be new. If `v0.2.0` already exists, bump the version before merging.
 
 ## 4. First install on a pharmacy PC
 
