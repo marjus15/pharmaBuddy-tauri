@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-09 — First signed release (v0.2.0)
+
+- `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` is the minisign public key. The placeholder is gone.
+- Version `0.2.0` is set in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `package.json`, and `package-lock.json`.
+- `docs/auto-update.md` says the pubkey is set. The release workflow tags `v0.2.0` and writes `latest.json` against the signed installer. The workflow file was not rewritten.
+
 ## 2026-10-08 — Unassigned login copy
 
 - The no-pharmacy line is exactly «Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.» The inactive-account line is unchanged.
@@ -22,7 +28,7 @@
 
 - Gear menu «Αναφορά προβλήματος» opens a panel with optional «Τι έγινε;». Send uploads a redacted log tail, version, PROD/TEST, and OS. The edge function `submit-problem-report` stores it on `problem_reports` for the JWT's pharmacy and returns a reference code («Στάλθηκε · #…»). Offline keeps the text. TEST and `PHARMABUDDY_REQUIRE_LOGIN=false` save a local file instead of calling Supabase.
 - Migration `supabase/migrations/20261008160000_problem_reports.sql` is not applied to the live project from this change. Steps are in `docs/problem-reports.md`.
-- Tauri updater checks in the background and only installs on the next launch. The orb shows «Νέα έκδοση, θα εγκατασταθεί στο επόμενο άνοιγμα». The release workflow signs with `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` and uploads `latest.json`. The pubkey in config is a placeholder until Marios generates a key. Backup builds do not auto-update. See `docs/auto-update.md`.
+- Tauri updater checks in the background and only installs on the next launch. The orb shows «Νέα έκδοση, θα εγκατασταθεί στο επόμενο άνοιγμα». The release workflow signs with `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` and uploads `latest.json`. Backup builds do not auto-update. See `docs/auto-update.md`.
 - Login card no longer stretches the password-to-«Είσοδος» gap; the error line is three lines tall. The scan chip keeps 48px of padding so the × does not cover the barcode.
 
 ## 2026-10-08 — Login and panel UI review
