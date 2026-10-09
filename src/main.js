@@ -1,9 +1,13 @@
 import {
   INACTIVE_PHARMACY_MESSAGE,
+  MANUAL_ENTRY_BARCODE,
+  MANUAL_NAME_NOT_FOUND_MESSAGE,
   OFFLINE_MESSAGE,
   SIDE_EFFECTS_TRUST_LINE,
   UNASSIGNED_PHARMACY_MESSAGE,
   UPDATE_NOTE,
+  barcodeForManualName,
+  latestDrugId,
   reduceUpdateUi,
   reportStatusFor,
   visibleRecommendation,
@@ -95,9 +99,7 @@ const BAD_CREDENTIALS_MESSAGE = "Λάθος στοιχεία";
 const REPORT_EXAMPLE =
   "Σκάναρα το ίδιο κουτί δύο φορές και έβγαλε ότι το προϊόν δεν υπάρχει. Ο κωδικός στο κουτί φαίνεται σωστός.";
 
-const MANUAL_ENTRY_BARCODE = "manual-entry";
-
-/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,sideEffects:string|null,sideEffectsStatus:string,recommendation:string|null,errorMessage:string|null,status:string}>} */
+/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,sideEffects:string|null,sideEffectsStatus:string,manualEntry?:boolean,recommendation:string|null,errorMessage:string|null,status:string}>} */}
 let scannedDrugs = [];
 let activeDrugId = null;
 let sidebarOpen = false;
@@ -633,6 +635,48 @@ function renderPreview(params) {
     };
     scannedDrugs = [drug];
     activeDrugId = many ? drug.id : null;
+    sidebarOpen = true;
+    drugSidebar.classList.remove("hidden");
+    drugSidebar.classList.add("visible");
+    renderDrugList();
+    setOrbState("idle");
+    return;
+  }
+
+  if (state === "manual-found" || state === "manual-not-found") {
+    const found = state === "manual-found";
+    const augmentin = {
+      id: "preview-augmentin",
+      barcode: "5201234567890",
+      found: true,
+      productName: "AUGMENTIN F.C.TAB",
+      activeIngredient: "Amoxicillin / Clavulanic acid",
+      atcCode: "J01CR02",
+      sideEffects: "διάρροια, ναυτία και έμετος.",
+      sideEffectsStatus: "done",
+      sideEffectsExpanded: false,
+      manualEntry: false,
+      recommendation: null,
+      errorMessage: null,
+      status: "idle",
+    };
+    const typed = {
+      id: found ? "preview-manual-found" : "preview-manual-missing",
+      barcode: MANUAL_ENTRY_BARCODE,
+      found: false,
+      productName: "zircos",
+      activeIngredient: "",
+      atcCode: "",
+      sideEffects: found ? "Συχνές: ζάλη, κεφαλαλγία και κόπωση." : null,
+      sideEffectsStatus: found ? "done" : "empty",
+      sideEffectsExpanded: false,
+      manualEntry: true,
+      recommendation: null,
+      errorMessage: null,
+      status: "idle",
+    };
+    scannedDrugs = [augmentin, typed];
+    activeDrugId = null;
     sidebarOpen = true;
     drugSidebar.classList.remove("hidden");
     drugSidebar.classList.add("visible");
@@ -1251,7 +1295,7 @@ function syncDrugItemElement(el, drug) {
 
   const view = visibleSideEffects(drug.sideEffects, Boolean(drug.sideEffectsExpanded));
   if (view.bullets.length) {
-    effectsBlock.classList.remove("hidden", "loading");
+    effectsBlock.classList.remove("hidden", "loading", "is-missing");
     effectsBlock.classList.toggle("is-expanded", Boolean(drug.sideEffectsExpanded));
     effectsText.textContent = "";
     effectsText.classList.add("is-hidden");
@@ -1270,8 +1314,17 @@ function syncDrugItemElement(el, drug) {
       moreBtn.textContent = "";
       moreBtn.classList.add("is-hidden");
     }
+  } else if (drug.manualEntry && drug.sideEffectsStatus === "empty") {
+    effectsBlock.classList.remove("hidden", "loading", "is-expanded");
+    effectsBlock.classList.add("is-missing");
+    effectsText.textContent = MANUAL_NAME_NOT_FOUND_MESSAGE;
+    effectsText.classList.remove("is-hidden");
+    effectsList.replaceChildren();
+    effectsList.classList.add("is-hidden");
+    moreBtn.textContent = "";
+    moreBtn.classList.add("is-hidden");
   } else if (drug.sideEffectsStatus === "loading") {
-    effectsBlock.classList.remove("hidden", "is-expanded");
+    effectsBlock.classList.remove("hidden", "is-expanded", "is-missing");
     effectsBlock.classList.add("loading");
     effectsText.textContent = "Αναζήτηση παρενεργειών…";
     effectsText.classList.remove("is-hidden");
@@ -1281,7 +1334,7 @@ function syncDrugItemElement(el, drug) {
     moreBtn.classList.add("is-hidden");
   } else {
     effectsBlock.classList.add("hidden");
-    effectsBlock.classList.remove("loading", "is-expanded");
+    effectsBlock.classList.remove("loading", "is-expanded", "is-missing");
     effectsText.textContent = "";
     effectsText.classList.add("is-hidden");
     effectsList.replaceChildren();
@@ -1471,8 +1524,11 @@ function createDrugItemElement(drug) {
 
 function renderDrugList() {
   drugList.innerHTML = "";
+  const newestId = latestDrugId(scannedDrugs);
   for (const drug of scannedDrugs) {
-    drugList.appendChild(createDrugItemElement(drug));
+    const el = createDrugItemElement(drug);
+    el.classList.toggle("is-latest", drug.id === newestId);
+    drugList.appendChild(el);
   }
 }
 
@@ -1543,7 +1599,11 @@ function addManualDrugFromInput() {
     return null;
   }
 
-  const barcode = pendingManualBarcode || lastAcceptedBarcode || MANUAL_ENTRY_BARCODE;
+  const barcode = barcodeForManualName({
+    pendingBarcode: pendingManualBarcode,
+    name,
+    drugs: scannedDrugs,
+  });
   const existing = scannedDrugs.find(
     (d) => d.barcode === barcode && d.productName.toLowerCase() === name.toLowerCase(),
   );
@@ -1562,6 +1622,7 @@ function addManualDrugFromInput() {
     atcCode: "",
     sideEffects: null,
     sideEffectsStatus: "idle",
+    manualEntry: true,
     recommendation: null,
     errorMessage: null,
     status: "idle",
@@ -1583,7 +1644,7 @@ async function openManualEntry() {
     await openSidebar();
   }
 
-  showManualEntryRow(lastAcceptedBarcode || MANUAL_ENTRY_BARCODE, "");
+  showManualEntryRow(MANUAL_ENTRY_BARCODE, "");
   await resizeWindow("sidebar");
 }
 
@@ -1608,6 +1669,7 @@ function loadSideEffects(drug) {
   const job = invoke("fetch_side_effects", {
     barcode: drug.barcode,
     productName: drug.productName || null,
+    nameOnly: drug.manualEntry === true,
   })
     .then(async (result) => {
       const text = String(result?.side_effects || "").trim();
@@ -1665,6 +1727,17 @@ async function requestRecommendation(drugId) {
   setOrbState("thinking");
 
   await loadSideEffects(drug);
+  if (drug.manualEntry && drug.sideEffectsStatus === "empty") {
+    activeDrugId = null;
+    drug.status = "idle";
+    drug.recommendation = null;
+    drug.errorMessage = null;
+    processing = false;
+    setOrbState("idle");
+    renderDrugList();
+    await resizeWindow("sidebar");
+    return;
+  }
   console.log(`[Recommend] barcode=${drug.barcode} product_name="${drug.productName}"`);
 
   try {

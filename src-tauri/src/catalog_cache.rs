@@ -53,8 +53,40 @@ pub fn schedule_catalog_cache_with_source(
     schedule_catalog_facts(barcode, product_name, source, None, None, None);
 }
 
+/// A catalog key is a real GTIN. Typed-name sentinels such as `manual-entry` are not.
+pub fn catalog_write_allowed_with_session(
+    barcode: &str,
+    product_name: &str,
+    session_name: Option<&str>,
+) -> bool {
+    let barcode = barcode.trim();
+    let product_name = product_name.trim();
+    if barcode.len() < 8 || !barcode.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    if product_name.chars().count() < 2 {
+        return false;
+    }
+    if let Some(existing) = session_name.map(str::trim).filter(|name| !name.is_empty()) {
+        if !crate::galinos::names_refer_to_same_product(existing, product_name) {
+            return false;
+        }
+    }
+    true
+}
+
+pub fn catalog_write_allowed(barcode: &str, product_name: &str) -> bool {
+    catalog_write_allowed_with_session(
+        barcode,
+        product_name,
+        get_session_cached(barcode).as_deref(),
+    )
+}
+
 /// Writes a catalog row and, when the barcode already exists, merges missing metadata
 /// such as the SPC side-effect excerpt.
+/// Refuses a non-barcode key and a name that disagrees with the name already cached
+/// for that barcode in this session, so a typed name cannot overwrite another product.
 pub fn schedule_catalog_facts(
     barcode: String,
     product_name: String,
@@ -64,6 +96,12 @@ pub fn schedule_catalog_facts(
     side_effects: Option<String>,
 ) {
     if !catalog_cache_enabled() {
+        return;
+    }
+    if !catalog_write_allowed(&barcode, &product_name) {
+        env_config::app_log(&format!(
+            "[Cache] refused write for {barcode}: name does not belong to this barcode"
+        ));
         return;
     }
 
