@@ -99,7 +99,7 @@ const BAD_CREDENTIALS_MESSAGE = "Λάθος στοιχεία";
 const REPORT_EXAMPLE =
   "Σκάναρα το ίδιο κουτί δύο φορές και έβγαλε ότι το προϊόν δεν υπάρχει. Ο κωδικός στο κουτί φαίνεται σωστός.";
 
-/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,sideEffects:string|null,sideEffectsStatus:string,manualEntry?:boolean,recommendation:string|null,errorMessage:string|null,status:string}>} */}
+/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,sideEffects:string|null,sideEffectsStatus:string,manualEntry?:boolean,recommendation:string|null,errorMessage:string|null,status:string}>} */
 let scannedDrugs = [];
 let activeDrugId = null;
 let sidebarOpen = false;
