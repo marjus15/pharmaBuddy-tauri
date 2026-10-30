@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-30 — Basket row names and the cyan bar
+
+- A collapsed product name stays on one line and ends with «…» when it does not fit. The tags stay on the right.
+- The cyan left bar is only on the open card. Collapsed rows are the same, including the newest scan.
+
 ## 2026-10-30 — Approved scan card and customer basket
 
 - A scanned product opens as one card: name, form and time, side-effect chips, and «ⓘ Τελική απόφαση: φαρμακοποιός». The card does not name a data source.

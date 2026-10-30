@@ -311,7 +311,11 @@ test("a typed name with no match shows the empty sentence and does not reuse the
   assert.match(main, /MANUAL_NAME_NOT_FOUND_MESSAGE/);
   assert.match(main, /drug\.manualEntry && drug\.sideEffectsStatus === "empty"/);
   const css = readFileSync("src/style.css", "utf8");
-  assert.match(css, /\.drug-item\.is-latest\.is-collapsed \.drug-row/);
+  assert.equal(/\.drug-item\.is-latest\.is-collapsed/.test(css), false);
+  assert.match(css, /\.drug-card\s*\{[^}]*border-left:\s*4px solid #22d3ee;/s);
+  assert.match(css, /\.drug-row-name\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(css, /\.drug-row-name\s*\{[^}]*text-overflow:\s*ellipsis;/s);
+  assert.match(css, /\.drug-row-tags\s*\{[^}]*flex-shrink:\s*0;/s);
   assert.match(css, /\.drug-card\.is-missing \.drug-card-ft\s*\{[^}]*display:\s*none/s);
 });
 
