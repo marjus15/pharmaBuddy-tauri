@@ -44,56 +44,96 @@
 
       <div id="login-overlay" class="login-overlay hidden" aria-hidden="true">
         <form id="login-form" class="login-panel" autocomplete="on">
+          <div class="login-mark" aria-hidden="true">
+            <div class="orb state-idle login-orb">
+              <div class="radar-host">
+                <div class="layer outer-glow"></div>
+                <div class="rings-assembly">
+                  <div class="ring ring-hud"></div>
+                  <div class="ring ring-a"></div>
+                  <div class="ring ring-b"></div>
+                  <div class="ring ring-static-108"></div>
+                </div>
+                <div class="layer inner-glow"></div>
+                <div class="layer core"></div>
+                <div class="layer glass"></div>
+              </div>
+            </div>
+          </div>
           <p class="login-title">Σύνδεση PharmaBuddy</p>
           <p class="login-desc">Τα στοιχεία σύνδεσης σάς τα δίνει η PharmaBuddy.</p>
-          <label class="login-label" for="login-identifier">Email / όνομα χρήστη</label>
-          <input
-            id="login-identifier"
-            class="login-input"
-            type="text"
-            name="username"
-            autocomplete="username"
-            spellcheck="false"
-            autocapitalize="off"
-          />
-          <label class="login-label" for="login-password">Κωδικός</label>
-          <div class="login-password-row">
-            <input
-              id="login-password"
-              class="login-input"
-              type="password"
-              name="password"
-              autocomplete="current-password"
-            />
-            <button
-              id="login-password-toggle"
-              class="login-eye"
-              type="button"
-              aria-label="Εμφάνιση κωδικού"
-              aria-pressed="false"
-            >
-              <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
+          <div class="login-fields">
+            <div class="login-field">
+              <label class="login-label" for="login-identifier">Email / όνομα χρήστη</label>
+              <input
+                id="login-identifier"
+                class="login-input"
+                type="text"
+                name="username"
+                autocomplete="username"
+                spellcheck="false"
+                autocapitalize="off"
+              />
+            </div>
+            <div class="login-field">
+              <label class="login-label" for="login-password">Κωδικός</label>
+              <div class="login-password-row">
+                <input
+                  id="login-password"
+                  class="login-input"
+                  type="password"
+                  name="password"
+                  autocomplete="current-password"
                 />
-                <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8" />
-              </svg>
-              <svg class="eye-shut" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M3 4l18 16M9.5 9.8A3 3 0 0 0 12 15a3 3 0 0 0 2.2-.9M6.1 6.8C4 8.2 2.6 10.2 2 12c1.2 2.2 4.2 6 10 6 1.6 0 3-.3 4.2-.8M17.8 14.2C20 12.8 21.4 11 22 12c-.5-1-1.4-2.2-2.6-3.3M9.9 6.3A12 12 0 0 1 12 6c5.8 0 8.8 3.8 10 6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
-              </svg>
-            </button>
+                <button
+                  id="login-password-toggle"
+                  class="login-eye"
+                  type="button"
+                  aria-label="Εμφάνιση κωδικού"
+                  aria-pressed="false"
+                >
+                  <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                    />
+                    <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8" />
+                  </svg>
+                  <svg class="eye-shut" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M3 4l18 16M9.5 9.8A3 3 0 0 0 12 15a3 3 0 0 0 2.2-.9M6.1 6.8C4 8.2 2.6 10.2 2 12c1.2 2.2 4.2 6 10 6 1.6 0 3-.3 4.2-.8M17.8 14.2C20 12.8 21.4 11 22 12c-.5-1-1.4-2.2-2.6-3.3M9.9 6.3A12 12 0 0 1 12 6c5.8 0 8.8 3.8 10 6"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <button id="login-forgot" class="login-forgot" type="button">Ξέχασα τον κωδικό</button>
+              <p id="login-forgot-note" class="login-forgot-note hidden" role="status">
+                <svg class="login-forgot-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  <circle cx="8" cy="5.05" r="0.75" fill="currentColor" />
+                  <path d="M8 7.15v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                </svg>
+                <span id="login-forgot-text"></span>
+              </p>
+            </div>
           </div>
-          <p id="login-error" class="login-error hidden" role="alert"></p>
-          <button id="login-submit" class="login-btn" type="submit">Είσοδος</button>
+          <div class="login-submit-block">
+            <p id="login-error" class="login-error hidden" role="alert">
+              <svg class="login-error-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.4" />
+                <path d="M8 4.6v4.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                <circle cx="8" cy="11.2" r="0.75" fill="currentColor" />
+              </svg>
+              <span id="login-error-text"></span>
+            </p>
+            <button id="login-submit" class="login-btn" type="submit">Είσοδος</button>
+          </div>
         </form>
       </div>
 

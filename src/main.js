@@ -1,5 +1,9 @@
 import {
+  FORGOT_PASSWORD_MESSAGE,
   INACTIVE_PHARMACY_MESSAGE,
+  LOGIN_CONFIG_MESSAGE,
+  LOGIN_OFFLINE_MESSAGE,
+  LOGIN_SERVER_MESSAGE,
   MANUAL_ENTRY_BARCODE,
   MANUAL_NAME_NOT_FOUND_MESSAGE,
   OFFLINE_MESSAGE,
@@ -8,6 +12,8 @@ import {
   UPDATE_NOTE,
   barcodeForManualName,
   latestDrugId,
+  loginErrorOnStartup,
+  loginFailureMessage,
   reduceUpdateUi,
   reportStatusFor,
   visibleRecommendation,
@@ -32,7 +38,7 @@ const SIDEBAR_WINDOW_MAX_WIDTH = 688;
 const SIZES = {
   collapsed: { width: 250, height: 288 },
   collapsedNote: { width: 336, height: 324 },
-  login: { width: 300, height: 400 },
+  login: { width: 380, height: 460 },
   sidebar: { width: 648, height: 320 },
   report: { width: 340, height: 460 },
 };
@@ -65,6 +71,10 @@ const loginIdentifier = $("login-identifier");
 const loginPassword = $("login-password");
 const loginPasswordToggle = $("login-password-toggle");
 const loginError = $("login-error");
+const loginErrorText = $("login-error-text");
+const loginForgot = $("login-forgot");
+const loginForgotNote = $("login-forgot-note");
+const loginForgotText = $("login-forgot-text");
 const loginSubmit = $("login-submit");
 const settingsButton = $("orb-settings-btn");
 const settingsMenu = $("settings-menu");
@@ -136,25 +146,50 @@ const LICENSE_INACTIVE_MESSAGE =
 const LICENSE_RECONNECT_MESSAGE =
   "Απαιτείται σύνδεση στο διαδίκτυο για επαλήθευση της άδειας.";
 
+function loginIsOpen() {
+  return Boolean(loginOverlay && !loginOverlay.classList.contains("hidden"));
+}
+
 function showLoginError(message) {
   if (!loginError) return;
-  loginError.textContent = message;
+  if (loginErrorText) loginErrorText.textContent = message;
+  else loginError.textContent = message;
   loginError.classList.remove("hidden");
 }
 
 function clearLoginError() {
   if (!loginError) return;
-  loginError.textContent = "";
+  if (loginErrorText) loginErrorText.textContent = "";
   loginError.classList.add("hidden");
+}
+
+function showForgotPasswordNote() {
+  if (!loginForgotNote) return;
+  if (loginForgotText) loginForgotText.textContent = FORGOT_PASSWORD_MESSAGE;
+  else loginForgotNote.textContent = FORGOT_PASSWORD_MESSAGE;
+  loginForgotNote.classList.remove("hidden");
+}
+
+function clearForgotPasswordNote() {
+  if (!loginForgotNote) return;
+  if (loginForgotText) loginForgotText.textContent = "";
+  loginForgotNote.classList.add("hidden");
+}
+
+function logClient(message) {
+  let line = String(message || "").slice(0, 500);
+  const password = loginPassword?.value || "";
+  if (password.length >= 3) line = line.split(password).join("[redacted]");
+  console.warn(line);
+  if (!tauri?.core?.invoke) return;
+  void invoke("client_log", { message: line }).catch(() => {});
 }
 
 function showLoginOverlay() {
   if (!loginOverlay) return;
   loginOverlay.classList.remove("hidden");
   loginOverlay.setAttribute("aria-hidden", "false");
-  if (WINDOW && LogicalSize) {
-    WINDOW.setSize(new LogicalSize(SIZES.login.width, SIZES.login.height)).catch(() => {});
-  }
+  void resizeWindow("login");
 }
 
 function hideLoginOverlay() {
@@ -162,6 +197,7 @@ function hideLoginOverlay() {
   loginOverlay.classList.add("hidden");
   loginOverlay.setAttribute("aria-hidden", "true");
   clearLoginError();
+  clearForgotPasswordNote();
   if (loginPassword) loginPassword.value = "";
   if (loginPassword) loginPassword.type = "password";
   loginPasswordToggle?.classList.remove("is-visible");
@@ -227,7 +263,8 @@ function applyAuthGate(gate) {
   setSettingsVisible(false);
   updatePharmacyFooter(null);
   showLoginOverlay();
-  if (gate?.error_message) showLoginError(gate.error_message);
+  const startupError = loginErrorOnStartup(gate);
+  if (startupError) showLoginError(startupError);
   else clearLoginError();
 }
 
@@ -243,6 +280,11 @@ async function submitLogin(event) {
     return;
   }
   clearLoginError();
+  if (navigator.onLine === false) {
+    logClient("[Auth] Login blocked: navigator.onLine is false");
+    showLoginError(LOGIN_OFFLINE_MESSAGE);
+    return;
+  }
   loginPending = true;
   loginSubmit.disabled = true;
   loginSubmit.textContent = "Σύνδεση…";
@@ -252,7 +294,8 @@ async function submitLogin(event) {
     if (!gate?.scans_enabled && gate?.error_message) showLoginError(gate.error_message);
   } catch (err) {
     const text = String(err ?? "");
-    showLoginError(text.toLowerCase().includes("network") ? OFFLINE_MESSAGE : text || OFFLINE_MESSAGE);
+    logClient(`[Auth] Login invoke failed: ${text}`);
+    showLoginError(loginFailureMessage({ online: navigator.onLine, errorText: text }));
   } finally {
     loginPending = false;
     loginSubmit.disabled = false;
@@ -272,6 +315,9 @@ function setupLogin() {
     loginPasswordToggle.classList.toggle("is-visible", show);
     loginPasswordToggle.setAttribute("aria-pressed", show ? "true" : "false");
     loginPasswordToggle.setAttribute("aria-label", show ? "Απόκρυψη κωδικού" : "Εμφάνιση κωδικού");
+  });
+  loginForgot?.addEventListener("click", () => {
+    showForgotPasswordNote();
   });
 }
 
@@ -328,7 +374,12 @@ function showUpdateNote(message) {
   updateNote.textContent = message || UPDATE_NOTE;
   updateNote.classList.remove("hidden");
   orbDock?.classList.add("has-update-note");
-  if (!sidebarOpen && reportOverlay?.classList.contains("hidden") && logoutConfirm?.classList.contains("hidden")) {
+  if (
+    !loginIsOpen() &&
+    !sidebarOpen &&
+    reportOverlay?.classList.contains("hidden") &&
+    logoutConfirm?.classList.contains("hidden")
+  ) {
     resizeWindow("collapsedNote");
   }
 }
@@ -525,22 +576,32 @@ function renderPreview(params) {
   scansEnabled = false;
   authMode = "test";
 
-  if (
-    state === "login" ||
-    state === "login-error" ||
-    state === "login-inactive" ||
-    state === "login-unassigned" ||
-    state === "login-offline" ||
-    state === "login-loading"
-  ) {
+  const loginStates = new Set([
+    "login",
+    "login-error",
+    "login-inactive",
+    "login-unassigned",
+    "login-offline",
+    "login-server",
+    "login-config",
+    "login-forgot",
+    "login-loading",
+  ]);
+  document.documentElement.classList.toggle("preview-login", loginStates.has(state));
+
+  if (loginStates.has(state)) {
     authMode = "login";
     if (loginIdentifier) loginIdentifier.value = email;
-    if (loginPassword && state !== "login") loginPassword.value = "secret-password";
+    const attempt = state !== "login" && state !== "login-forgot";
+    if (loginPassword && attempt) loginPassword.value = "secret-password";
     showLoginOverlay();
     if (state === "login-error") showLoginError(BAD_CREDENTIALS_MESSAGE);
     if (state === "login-inactive") showLoginError(INACTIVE_PHARMACY_MESSAGE);
     if (state === "login-unassigned") showLoginError(UNASSIGNED_PHARMACY_MESSAGE);
-    if (state === "login-offline") showLoginError(OFFLINE_MESSAGE);
+    if (state === "login-offline") showLoginError(LOGIN_OFFLINE_MESSAGE);
+    if (state === "login-server") showLoginError(LOGIN_SERVER_MESSAGE);
+    if (state === "login-config") showLoginError(LOGIN_CONFIG_MESSAGE);
+    if (state === "login-forgot") showForgotPasswordNote();
     if (state === "login-loading" && loginSubmit) {
       loginPending = true;
       loginSubmit.disabled = true;
@@ -1176,11 +1237,31 @@ async function waitForLayout() {
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
+async function setWindowMinSize(size) {
+  if (!WINDOW?.setMinSize || !LogicalSize) return;
+  try {
+    if (!size) await WINDOW.setMinSize(null);
+    else await WINDOW.setMinSize(new LogicalSize(size.width, size.height));
+  } catch (err) {
+    console.warn("[Window] min size:", err);
+  }
+}
+
 async function resizeWindow(sizeKey) {
+  if (loginIsOpen()) sizeKey = "login";
   if (!WINDOW || !LogicalSize) return;
   const size = SIZES[sizeKey];
 
-  if (sizeKey === "collapsed" || sizeKey === "collapsedNote" || sizeKey === "report" || sizeKey === "login") {
+  if (sizeKey === "login") {
+    await setWindowMinSize(size);
+    if (!loginIsOpen()) return;
+    await WINDOW.setSize(new LogicalSize(size.width, size.height));
+    return;
+  }
+
+  await setWindowMinSize(null);
+
+  if (sizeKey === "collapsed" || sizeKey === "collapsedNote" || sizeKey === "report") {
     await WINDOW.setSize(new LogicalSize(size.width, size.height));
     return;
   }
@@ -1992,7 +2073,7 @@ async function init() {
   // });
 
   setOrbState("idle");
-  await resizeWindow("collapsed");
+  await resizeWindow(loginIsOpen() ? "login" : "collapsed");
   void startUpdateWatch();
 
   console.log("[pharmaBuddy] Widget ready");

@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-10-30 — Login window and honest connection errors
+
+- The login window is 380×460 and cannot shrink below that while the form is open. The form is centered so the title and «Είσοδος» stay on screen without a large empty area under the button.
+- The form has 24px edge padding, the 48px orb above the title, 16px between fields, and «Είσοδος» directly under the password block. The error line no longer reserves four blank lines.
+- Errors show after «Είσοδος», with a small icon and 12px above the button. Offline copy is only for a device that is actually offline. Missing or invalid Supabase settings use the config sentence. DNS, TLS, timeout, and other reachability failures say «Δοκιμάστε ξανά σε λίγο.» The raw error goes to the app log.
+- «Ξέχασα τον κωδικό» shows the contact sentence in muted cyan with an info icon. There is no email reset.
+- Preview states: `login-server`, `login-config`, `login-forgot`, plus the existing login states.
+
 ## 2026-10-09 — Typed drug name no longer reuses the previous scan
 
 - Typing a name after a scan (for example «zircos» after Augmentin) used to keep that scan’s barcode. Side effects were loaded from the barcode, so the new card showed Augmentin’s bullets, and the same barcode was sent to the catalog and the recommendation.
