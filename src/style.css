@@ -170,7 +170,7 @@ body {
   width: 100%;
   max-width: 100%;
   padding: 8px 12px;
-  background: rgba(0, 74, 88, 0.95);
+  background: #004a58;
   border: none;
   border-radius: 14px;
   color: #f2f4f7;
@@ -189,11 +189,11 @@ body {
 }
 
 .drug-name-btn:hover:not(:disabled) {
-  background: rgba(0, 96, 112, 0.98);
+  background: #006070;
 }
 
 .drug-name-btn.active {
-  background: rgba(0, 116, 134, 1);
+  background: #007486;
   box-shadow: 0 0 8px rgba(0, 232, 255, 0.3);
 }
 
@@ -216,7 +216,7 @@ body {
   max-height: 260px;
   overflow: hidden;
   padding: 10px 12px;
-  background: rgba(14, 17, 22, 0.92);
+  background: #0e1116;
   border-radius: 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
 }
@@ -291,7 +291,6 @@ body {
   height: 26px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -348,7 +347,7 @@ body {
   max-width: 100%;
   overflow: visible;
   padding: 10px 12px;
-  background: rgba(14, 17, 22, 0.92);
+  background: #0e1116;
   border: none;
   border-radius: 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -369,7 +368,7 @@ body {
 }
 
 .drug-recommendation.error {
-  background: rgba(64, 26, 30, 0.95);
+  background: #401a1e;
 }
 
 .drug-recommendation.error .recommendation-text {

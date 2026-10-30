@@ -6,15 +6,23 @@ import {
   MANUAL_NAME_NOT_FOUND_MESSAGE,
   RECOMMENDATION_MORE_LABEL,
   SIDE_EFFECT_VISIBLE_LIMIT,
+  SIDE_EFFECTS_FALLBACK,
   SIDE_EFFECTS_TRUST_LINE,
   barcodeForManualName,
   latestDrugId,
   sideEffectBullets,
   sideEffectsMoreLabel,
   splitRecommendationSentences,
+  trimAtWordBoundary,
   visibleRecommendation,
   visibleSideEffects,
 } from "../src/widget-logic.mjs";
+
+const ASPIRIN_PUBLIC_EXCERPT =
+  "Περίληψη του προφίλ ασφαλείας Οι καταγραφόμενες ανεπιθύμητες ενέργειες βασίζονται σε αυθόρμητες αναφορές ανεπιθύμητων ενεργειών μετά την κυκλοφορία του φαρμάκου που αφορούν σε όλες τις μορφές/περιε...";
+
+const ASPIRIN_WITH_LIST =
+  "Περίληψη του προφίλ ασφαλείας Οι συχνότερα αναφερόμενες ανεπιθύμητες ενέργειες είναι δυσπεψία, ναυτία, έμετος, επιγαστραλγία και γαστρεντερική αιμορραγία. Κατάλογος ανεπιθύμητων ενεργειών Διαταραχές του γαστρεντερικού συστήματος Συχνές: δυσπεψία, ναυτία, έμετος. Σπάνιες: έλκος στομάχου, γαστρεντερική αιμορραγία.";
 
 const AUGMENTIN_EXCERPT =
   "Περίληψη του προφίλ ασφάλειας. Οι συχνότερα αναφερόμενες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία, έμετος και δερματικό εξάνθημα. Οι ανεπιθύμητες ενέργειες ταξινομούνται κατά συχνότητα ως εξής: πολύ συχνές (≥1/10), συχνές (≥1/100 έως <1/10), όχι συχνές (≥1/1.000 έως <1/100), σπάνιες (≥1/10.000 έως <1/1.000), πολύ σπάνιες (<1/10.000). Λοιμώξεις και παρασιτώσεις Συχνές: καντιντίαση του δέρματος και των βλεννογόνων. Διαταραχές του ανοσοποιητικού συστήματος Σπάνιες: αναφυλαξία, αγγειοοίδημα. Διαταραχές του νευρικού συστήματος Όχι συχνές: κεφαλαλγία, ζάλη. Διαταραχές του γαστρεντερικού συστήματος Πολύ συχνές: διάρροια. Συχνές: ναυτία, έμετος, δυσπεψία, κοιλιακό άλγος. Διαταραχές του ήπατος Όχι συχνές: αύξηση ηπατικών ενζύμων. Σπάνιες: ηπατίτιδα. Διαταραχές του δέρματος Συχνές: κνησμός, κνίδωση.";
@@ -77,6 +85,80 @@ test("few effects have no more-row", () => {
   assert.equal(view.moreLabel, "");
 });
 
+test("aspirin public excerpt does not turn the safety-profile heading into a bullet", () => {
+  for (const excerpt of [
+    ASPIRIN_PUBLIC_EXCERPT,
+    "Περίληψη του προφίλ ασφαλείας Οι",
+    "Περίληψη του προφίλ ασφάλειας Οι",
+  ]) {
+    const bullets = sideEffectBullets(excerpt);
+    assert.deepEqual(bullets, []);
+    assert.equal(
+      bullets.some((bullet) => /προφίλ|περίληψη|κατάλογος/i.test(bullet)),
+      false,
+    );
+  }
+  assert.equal(visibleSideEffects(ASPIRIN_PUBLIC_EXCERPT, false).bullets.length, 0);
+  assert.equal(SIDE_EFFECTS_FALLBACK, "Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.");
+});
+
+test("an aspirin-like list still yields real side effects and drops headings", () => {
+  const bullets = sideEffectBullets(ASPIRIN_WITH_LIST);
+  assert.deepEqual(bullets.slice(0, 5), [
+    "Δυσπεψία",
+    "Ναυτία",
+    "Έμετος",
+    "Επιγαστραλγία",
+    "Γαστρεντερική αιμορραγία",
+  ]);
+  assert.ok(bullets.length <= 20);
+  assert.equal(
+    bullets.some((bullet) =>
+      /προφίλ ασφαλείας|προφίλ ασφάλειας|περίληψη|κατάλογος|συχνές|σπάνιες/i.test(bullet),
+    ),
+    false,
+  );
+  assert.equal(visibleSideEffects(ASPIRIN_WITH_LIST, false).bullets.length, 5);
+});
+
+test("headings, frequency labels, and table fragments are not bullets", () => {
+  assert.deepEqual(sideEffectBullets("Κατάλογος ανεπιθύμητων ενεργειών"), []);
+  assert.deepEqual(sideEffectBullets("Περίληψη του προφίλ ασφαλείας"), []);
+  assert.deepEqual(sideEffectBullets("Συχνές"), []);
+  assert.deepEqual(sideEffectBullets("Σπάνιες"), []);
+  assert.deepEqual(sideEffectBullets("Πολύ συχνές"), []);
+  assert.deepEqual(
+    sideEffectBullets(
+      "Κατηγορία οργανικού συστήματος Συχνότητα Ανεπιθύμητη ενέργεια Συχνές Σπάνιες Πολύ σπάνιες",
+    ),
+    [],
+  );
+  assert.deepEqual(sideEffectBullets("δυσπεψία, ναυτία και έμετ..."), ["Δυσπεψία", "Ναυτία"]);
+});
+
+test("a long bullet is trimmed on a word boundary and ends with an ellipsis", () => {
+  const source = "Παρατεταμένη αιμορραγία του ανώτερου γαστρεντερικού σωλήνα";
+  const bullets = sideEffectBullets(`${source}.`);
+  assert.equal(bullets.length, 1);
+  assert.equal(bullets[0].endsWith("…"), true);
+  const body = bullets[0].slice(0, -1).trim();
+  assert.equal(/\s$/.test(body), false);
+  for (const word of body.split(/\s+/)) {
+    assert.equal(source.includes(word), true);
+  }
+  assert.ok(body.split(/\s+/).length <= 5);
+
+  const fitted = trimAtWordBoundary(bullets[0], 32);
+  assert.equal(fitted.endsWith("…"), true);
+  assert.ok([...fitted].length <= 32);
+  const fittedBody = fitted.slice(0, -1).trim();
+  assert.equal(fittedBody.includes(" "), true);
+  for (const word of fittedBody.split(/\s+/)) {
+    assert.equal(source.includes(word), true);
+  }
+  assert.equal(trimAtWordBoundary("Ναυτία", 12), "Ναυτία");
+});
+
 test("blank and unknown excerpts render nothing", () => {
   assert.deepEqual(sideEffectBullets(""), []);
   assert.deepEqual(sideEffectBullets(null), []);
@@ -98,6 +180,8 @@ test("pharmacist UI has no Galinos excerpt and uses the readable sidebar sizes",
     .join("\n");
   assert.equal(/Γαληνός|galinos\.gr|Απόσπασμα ΠΧΠ/i.test(ui), false);
   assert.match(readFileSync("src/main.js", "utf8"), /SIDE_EFFECTS_TRUST_LINE/);
+  assert.match(readFileSync("src/main.js", "utf8"), /SIDE_EFFECTS_FALLBACK/);
+  assert.match(readFileSync("src/main.js", "utf8"), /trimAtWordBoundary/);
   assert.match(readFileSync("src/index.html", "utf8"), /<html lang="el">/);
   const css = readFileSync("src/style.css", "utf8");
   assert.match(css, /font-family:\s*"Segoe UI Variable",\s*"Segoe UI",\s*sans-serif/);
@@ -111,6 +195,11 @@ test("pharmacist UI has no Galinos excerpt and uses the readable sidebar sizes",
   assert.match(css, /\.side-effects-list li\s*\{[^}]*font-size:\s*18px;/s);
   assert.match(css, /\.side-effects-list li\s*\{[^}]*line-height:\s*26px;/s);
   assert.match(css, /\.side-effects-list li\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.equal(/\.side-effects-list li\s*\{[^}]*text-overflow:\s*ellipsis/s.test(css), false);
+  assert.match(css, /\.drug-name-btn\s*\{[^}]*background:\s*#004a58;/s);
+  assert.match(css, /\.drug-side-effects\s*\{[^}]*background:\s*#0e1116;/s);
+  assert.match(css, /\.drug-recommendation\s*\{[^}]*background:\s*#0e1116;/s);
+  assert.match(css, /html,\s*body\s*\{[^}]*background:\s*transparent;/s);
   assert.match(css, /\.side-effects-note\s*\{[^}]*font-size:\s*13px;/s);
   assert.match(css, /\.side-effects-note\s*\{[^}]*color:\s*#c9d6e4;/s);
   assert.match(css, /\.side-effects-more,[\s\S]*?height:\s*32px;/);

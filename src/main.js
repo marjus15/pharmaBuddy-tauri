@@ -7,6 +7,7 @@ import {
   MANUAL_ENTRY_BARCODE,
   MANUAL_NAME_NOT_FOUND_MESSAGE,
   OFFLINE_MESSAGE,
+  SIDE_EFFECTS_FALLBACK,
   SIDE_EFFECTS_TRUST_LINE,
   UNASSIGNED_PHARMACY_MESSAGE,
   UPDATE_NOTE,
@@ -16,6 +17,7 @@ import {
   loginFailureMessage,
   reduceUpdateUi,
   reportStatusFor,
+  trimAtWordBoundary,
   visibleRecommendation,
   visibleSideEffects,
 } from "./widget-logic.mjs";
@@ -1384,7 +1386,9 @@ function syncDrugItemElement(el, drug) {
     effectsList.replaceChildren(
       ...view.bullets.map((text) => {
         const li = document.createElement("li");
-        li.textContent = text;
+        const shown = fitSideEffectBullet(text);
+        li.textContent = shown;
+        if (shown !== text) li.title = text;
         return li;
       }),
     );
@@ -1395,6 +1399,14 @@ function syncDrugItemElement(el, drug) {
       moreBtn.textContent = "";
       moreBtn.classList.add("is-hidden");
     }
+  } else if (drug.sideEffects && drug.sideEffectsStatus !== "loading") {
+    effectsBlock.classList.remove("hidden", "loading", "is-missing", "is-expanded");
+    effectsText.textContent = SIDE_EFFECTS_FALLBACK;
+    effectsText.classList.remove("is-hidden");
+    effectsList.replaceChildren();
+    effectsList.classList.add("is-hidden");
+    moreBtn.textContent = "";
+    moreBtn.classList.add("is-hidden");
   } else if (drug.manualEntry && drug.sideEffectsStatus === "empty") {
     effectsBlock.classList.remove("hidden", "loading", "is-expanded");
     effectsBlock.classList.add("is-missing");
@@ -1464,6 +1476,44 @@ function syncDrugItemElement(el, drug) {
 
 const RECOMMENDATION_LINE_PX = 26;
 const RECOMMENDATION_TEXT_WIDTH = 336;
+const SIDE_EFFECT_BULLET_WIDTH = 312;
+
+function sideEffectBulletFits(text) {
+  const probe = document.createElement("span");
+  probe.textContent = text;
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.visibility = "hidden";
+  probe.style.whiteSpace = "nowrap";
+  probe.style.fontSize = "18px";
+  probe.style.fontWeight = "400";
+  probe.style.fontFamily = '"Segoe UI Variable", "Segoe UI", sans-serif';
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  if (width < 1) return [...text].length <= 34;
+  return width <= SIDE_EFFECT_BULLET_WIDTH;
+}
+
+function fitSideEffectBullet(text) {
+  const value = String(text || "");
+  if (!value || sideEffectBulletFits(value)) return value;
+  let best = trimAtWordBoundary(value, 8);
+  let lo = 2;
+  let hi = [...value].length;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const candidate = trimAtWordBoundary(value, mid);
+    if (sideEffectBulletFits(candidate)) {
+      best = candidate;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best;
+}
 
 function recommendationFitsThreeLines(text) {
   const probe = document.createElement("p");

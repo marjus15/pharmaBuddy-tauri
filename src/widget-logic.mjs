@@ -112,6 +112,9 @@ export function reduceUpdateUi(state, event) {
 export const SIDE_EFFECTS_TRUST_LINE =
   "Βοηθητικές πληροφορίες. Η τελική απόφαση ανήκει στον φαρμακοποιό.";
 
+/** Shown when an excerpt exists but no real side-effect names can be read from it. */
+export const SIDE_EFFECTS_FALLBACK = "Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.";
+
 /** Sentinel barcode for a typed name. It is not a GTIN and must not be written to the catalog. */
 export const MANUAL_ENTRY_BARCODE = "manual-entry";
 
@@ -198,11 +201,6 @@ function isGreekLetter(ch) {
   return /[\p{L}]/u.test(ch || "");
 }
 
-function isSentenceStart(text, index) {
-  const prev = text.slice(0, index).trimEnd();
-  return prev.length === 0 || /[.!;]$/.test(prev);
-}
-
 function nextWord(text) {
   const match = String(text || "")
     .trimStart()
@@ -210,12 +208,92 @@ function nextWord(text) {
   return match ? lowerEl(match[0]) : "";
 }
 
+const SECTION_HEADINGS = [
+  "περίληψη του προφίλ ασφαλείας",
+  "περίληψη του προφίλ ασφάλειας",
+  "κατάλογος ανεπιθύμητων ενεργειών",
+  "πίνακας ανεπιθύμητων ενεργειών",
+  "κατηγορία οργανικού συστήματος",
+  "ανεπιθύμητη ενέργεια",
+].sort((a, b) => b.length - a.length);
+
+const TABLE_TOKENS = new Set([
+  "συχνότητα",
+  "κατηγορία",
+  "οργανικού",
+  "συστήματος",
+  "ανεπιθύμητη",
+  "ανεπιθύμητες",
+  "ενέργεια",
+  "ενέργειες",
+  "κατάλογος",
+  "περίληψη",
+  "προφίλ",
+  "ασφαλείας",
+  "ασφάλειας",
+  "πίνακας",
+  "του",
+  "της",
+  "των",
+  "και",
+  "ή",
+  "πολύ",
+  "όχι",
+  "οι",
+  "η",
+  "ο",
+  "το",
+  "τα",
+  "σε",
+  "με",
+  "από",
+  "για",
+]);
+
+function stripSectionHeadings(text) {
+  let value = String(text || "");
+  for (let guard = 0; guard < 8; guard++) {
+    const lower = lowerEl(value);
+    let next = null;
+    for (const heading of SECTION_HEADINGS) {
+      let from = 0;
+      while (from < lower.length) {
+        const at = lower.indexOf(heading, from);
+        if (at === -1) break;
+        const before = at === 0 ? "" : lower[at - 1];
+        const after = lower[at + heading.length] || "";
+        if (!isGreekLetter(before) && !isGreekLetter(after)) {
+          next = { at, len: heading.length };
+          break;
+        }
+        from = at + heading.length;
+      }
+      if (next) break;
+    }
+    if (!next) break;
+    value = `${value.slice(0, next.at)} ${value.slice(next.at + next.len)}`.replace(/\s+/g, " ").trim();
+  }
+  return value;
+}
+
 function isLegend(sentence) {
   const lower = lowerEl(sentence);
   if (/[≥≤]/.test(sentence)) return true;
-  return /ταξινομ|ορίζοντ|κατηγορία οργανικού|προφίλ ασφάλειας|παρατίθενται παρακάτω|δεν μπορούν να εκτιμηθούν/.test(
+  return /ταξινομ|ορίζοντ|κατηγορία οργανικού|προφίλ ασφάλειας|προφίλ ασφαλείας|παρατίθενται παρακάτω|δεν μπορούν να εκτιμηθούν|κατάλογος ανεπιθύμητων|πίνακας ανεπιθύμητων|βασίζ|αυθόρμητ|καταγραφόμεν|μετά την κυκλοφορία/.test(
     lower,
   );
+}
+
+function isCutOffFragment(text) {
+  return /…|\.{3}/.test(String(text || ""));
+}
+
+function isTableFragment(text) {
+  const lower = lowerEl(text).replace(/[.:;]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!lower) return true;
+  const tokens = lower.split(" ").filter(Boolean);
+  if (tokens.length === 0) return true;
+  return tokens.every((token) => TABLE_TOKENS.has(token) || isFrequencyOnly(token));
 }
 
 function isOverdose(sentence) {
@@ -249,7 +327,7 @@ function findLabels(text) {
       const after = text.slice(i + label.length);
       const trimmed = after.trimStart();
       const colon = trimmed.startsWith(":");
-      const adverbOk = isSentenceStart(text, i) && !ADVERB_STOP.has(nextWord(trimmed));
+      const adverbOk = !ADVERB_STOP.has(nextWord(trimmed));
       if (!colon && !adverbOk) continue;
       const whitespace = after.length - trimmed.length;
       found.push({
@@ -348,6 +426,7 @@ function percentRank(piece) {
 }
 
 function cleanItem(raw) {
+  if (isCutOffFragment(raw)) return "";
   let text = String(raw || "");
   text = text.replace(/\([^)]*\)/g, " ");
   text = text.replace(/\d+(?:[.,]\d+)?\s*%/g, " ");
@@ -356,7 +435,6 @@ function cleanItem(raw) {
     /^(?:πολύ\s+συχν\p{L}*|όχι\s+συχν\p{L}*|πολύ\s+σπάνι\p{L}*|μη\s+γνωστής\s+συχνότητας|σπάνι\p{L}*|συχν\p{L}*)\s*[:.]?\s*/iu,
     "",
   );
-  text = text.replace(/[…]+/g, " ");
   text = text.replace(/^(?:και|ή)\s+/iu, "");
   text = text.replace(/^[\s\-–—:.,;]+|[\s\-–—:.,;]+$/g, "");
   text = text.replace(/\s+/g, " ").trim();
@@ -364,9 +442,15 @@ function cleanItem(raw) {
   text = text.replace(/^(?:η|ο|το|οι|τα)\s+/iu, "");
   text = text.replace(/[.]+$/g, "").trim();
   text = text.replace(/\s+/g, " ").trim();
-  if (!text || isSocHeader(text) || isFrequencyOnly(text) || isLegend(text)) return "";
+  if (!text || isSocHeader(text) || isFrequencyOnly(text) || isLegend(text) || isTableFragment(text)) {
+    return "";
+  }
   const words = text.split(/\s+/).filter(Boolean);
-  if (words.length > MAX_BULLET_WORDS) text = words.slice(0, MAX_BULLET_WORDS).join(" ");
+  let trimmedForLength = false;
+  if (words.length > MAX_BULLET_WORDS) {
+    text = words.slice(0, MAX_BULLET_WORDS).join(" ");
+    trimmedForLength = true;
+  }
   let previous = "";
   while (text !== previous) {
     previous = text;
@@ -375,8 +459,53 @@ function cleanItem(raw) {
       "",
     );
   }
+  if (trimmedForLength && text) text = `${text}…`;
   if (text.length < 3 || !/[Α-Ωα-ωΆ-ώΪΫϊϋΐΰ]/u.test(text)) return "";
   return capitalizeGreek(text);
+}
+
+/**
+ * Shorten a bullet so it ends on a whole word or sentence. Never slices inside a word.
+ * `maxChars` counts the ellipsis.
+ */
+export function trimAtWordBoundary(text, maxChars) {
+  const value = String(text ?? "")
+    .replace(/…+$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const limit = Number(maxChars);
+  if (!value) return "";
+  if (!Number.isFinite(limit) || limit < 1 || [...value].length <= limit) return value;
+  const chars = [...value];
+  const budget = Math.max(1, limit - 1);
+  let idx = -1;
+  const scanTo = Math.min(budget, chars.length) - 1;
+  for (let i = scanTo; i >= 0; i--) {
+    const ch = chars[i];
+    if (ch === " " || ch === "." || ch === ";" || ch === "!" || ch === "·") {
+      idx = i;
+      break;
+    }
+  }
+  let kept = "";
+  if (idx <= 0) {
+    const space = chars.indexOf(" ");
+    if (space === -1) return value;
+    kept = chars.slice(0, space).join("");
+  } else {
+    kept = chars.slice(0, idx).join("");
+  }
+  let previous = "";
+  while (kept !== previous) {
+    previous = kept;
+    kept = kept.replace(/[\s.,;:·!]+$/u, "").replace(
+      /\s+(?:και|ή|του|της|των|το|τα|τις|τους|στο|στη|στην|στον|σε|με|από|για)$/iu,
+      "",
+    );
+  }
+  kept = kept.trim();
+  if (!kept) return "…";
+  return `${kept}…`;
 }
 
 function collectSideEffects(text) {
@@ -400,7 +529,7 @@ function collectSideEffects(text) {
       .map((sentence) => sentence.trim())
       .filter(Boolean);
     for (const sentence of sentences) {
-      if (isLegend(sentence) || isOverdose(sentence)) continue;
+      if (isLegend(sentence) || isOverdose(sentence) || isTableFragment(sentence)) continue;
       const baseRank = chunk.intro ? introRank(sentence) : chunk.rank;
       for (const piece of splitPieces(sentence)) {
         const cleaned = cleanItem(piece);
@@ -444,9 +573,11 @@ export function sideEffectsMoreLabel(hiddenCount) {
 
 /** Short counter bullets from a stored SPC excerpt. Common effects lead; serious ones follow. */
 export function sideEffectBullets(raw) {
-  const text = String(raw ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = stripSectionHeadings(
+    String(raw ?? "")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
   if (!text || /^(?:n\/a|δεν αναφέρεται)$/iu.test(text)) return [];
 
   const ranked = collectSideEffects(text).sort(
