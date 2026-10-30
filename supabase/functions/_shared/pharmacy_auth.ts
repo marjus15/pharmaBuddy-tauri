@@ -156,7 +156,7 @@ export async function authorizePharmacy(
     ok: true,
     mode: "user",
     userId: user.id,
-    pharmacyId: String(pharmacyId),
+    pharmacyId: String(pharmacy.id ?? pharmacyId),
     pharmacyName: pharmacy?.name ?? null,
   }
 }

@@ -158,6 +158,114 @@ export const SIDE_EFFECT_VISIBLE_LIMIT = 5;
 
 const CHIP_MAX_WORDS = 3;
 
+/** Connector, frequency, and reference words that are never a side effect. */
+const FILLER_WORDS = new Set([
+  "αντιστοιχα",
+  "αντιστοιχες",
+  "αντιστοιχη",
+  "αντιστοιχο",
+  "αντιστοιχοι",
+  "αντιστοιχων",
+  "βλεπε",
+  "βλ",
+  "παρακατω",
+  "επισης",
+  "οπως",
+  "καθως",
+  "σπανια",
+  "σπανιες",
+  "σπανιο",
+  "σπανιος",
+  "σπανιως",
+  "αναφερθηκαν",
+  "αναφερθηκε",
+  "αναφερθει",
+  "αναφερονται",
+  "αναφερεται",
+  "αναφερομενες",
+  "αναφερομενη",
+  "αναφερομενα",
+  "αναφερομενων",
+  "ιστορικα",
+  "δεδομενα",
+  "κλινικων",
+  "κλινικες",
+  "μελετων",
+  "μελετες",
+  "εμπειρια",
+  "εκτενη",
+  "εκτεταμενη",
+  "ασθενων",
+  "ασθενεις",
+  "ασθενη",
+  "αριθμο",
+  "αριθμος",
+  "μικρο",
+  "μικρος",
+]);
+
+/**
+ * A chip must contain one of these adverse-reaction stems.
+ * Boilerplate such as «Αντίστοιχα» does not.
+ */
+const SYMPTOM_STEMS = [
+  "ναυτ",
+  "εμετ",
+  "διαρρο",
+  "εξανθ",
+  "ζαλ",
+  "κεφαλαλγ",
+  "αλγ",
+  "δυσπεψ",
+  "αιμορραγ",
+  "κνησμ",
+  "κνιδω",
+  "ηπατ",
+  "αναφυλαξ",
+  "οιδημ",
+  "καντιντ",
+  "μυαλγ",
+  "αναιμ",
+  "φαρυγγ",
+  "ερυθρ",
+  "δυσφορ",
+  "γαστρ",
+  "ελκ",
+  "κνιδ",
+  "πυρετ",
+  "βηχ",
+  "δυσκοιλ",
+  "υπνηλ",
+  "αυπν",
+  "ιλιγγ",
+  "αρθραλγ",
+  "ταχυκαρδ",
+  "βραδυκαρδ",
+  "υποτασ",
+  "υπερτασ",
+  "λευκοπεν",
+  "θρομβ",
+  "ουδετεροπ",
+  "δερματιτ",
+  "ουρτικ",
+  "δυσπνο",
+  "βρογχ",
+  "στοματιτ",
+  "παγκρεατ",
+  "ικτερ",
+  "χολοστασ",
+  "δυσουρ",
+  "συγχυσ",
+  "παραισθ",
+  "τρεμου",
+  "σπασμ",
+  "ξηροστομ",
+  "ανορεξ",
+  "κοπωσ",
+  "εξασθεν",
+  "ραβδομυ",
+];
+
 const FREQUENCY_LABELS = [
   ["μη γνωστής συχνότητας", 6],
   ["πολύ σπάνιες", 5],
@@ -478,7 +586,28 @@ function cleanItem(raw) {
   if (words.length > CHIP_MAX_WORDS) return "";
   if (words.some((word) => word.length < 3)) return "";
   if (text.length < 3 || !/[Α-Ωα-ωΆ-ώΪΫϊϋΐΰ]/u.test(text)) return "";
+  text = symptomChip(text);
+  if (!text) return "";
   return capitalizeGreek(text);
+}
+
+function foldedWord(word) {
+  return foldFacts(word).replace(/[^\p{L}]/gu, "");
+}
+
+/** Drop connector words, then keep the phrase only when a real effect stem remains. */
+function symptomChip(text) {
+  const kept = String(text || "")
+    .split(/\s+/)
+    .filter((word) => {
+      const folded = foldedWord(word);
+      return folded && !FILLER_WORDS.has(folded);
+    });
+  const phrase = kept.join(" ").trim();
+  if (!phrase) return "";
+  const folded = foldFacts(phrase);
+  if (!SYMPTOM_STEMS.some((stem) => folded.includes(stem))) return "";
+  return phrase;
 }
 
 /** Keep a short effect name. Longer phrases survive only as the words before a preposition. */
@@ -634,6 +763,38 @@ export function sideEffectBullets(raw) {
 
 export const RECOMMENDATION_MORE_LABEL = "+ περισσότερα";
 
+/** Safety net when a suggestion is longer than about two lines. */
+export const RECOMMENDATION_MAX_CHARS = 110;
+
+/**
+ * Keep a suggestion that fits the limit. A longer one ends on a whole word with «…».
+ * `fits` is the layout check (about two lines). It never slices inside a word.
+ */
+export function clampRecommendation(text, options = {}) {
+  const full = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!full) return "";
+  const maxChars = Number(options.maxChars) || RECOMMENDATION_MAX_CHARS;
+  const fits = typeof options.fits === "function" ? options.fits : () => true;
+  if ([...full].length <= maxChars && fits(full)) return full;
+
+  const words = full.split(/\s+/).filter(Boolean);
+  let chosen = "";
+  for (let count = 1; count <= words.length; count++) {
+    const phrase = words.slice(0, count).join(" ");
+    const partial = count < words.length || [...phrase].length > maxChars;
+    const candidate = partial ? `${phrase}…` : phrase;
+    if ([...candidate].length > maxChars || !fits(candidate)) break;
+    chosen = candidate;
+    if (!partial) break;
+  }
+  if (chosen) return chosen;
+  const shortest = `${words[0]}…`;
+  if ([...shortest].length <= maxChars) return shortest;
+  return trimAtWordBoundary(full, maxChars);
+}
+
 /** Complete sentences, keeping the closing punctuation on each one. */
 export function splitRecommendationSentences(raw) {
   const text = String(raw ?? "")
@@ -658,9 +819,8 @@ export function splitRecommendationSentences(raw) {
 }
 
 /**
- * Collapsed view is whole sentences only: the first two when they fit in three
- * lines, otherwise the longest complete prefix that fits. A sentence that is
- * itself longer than three lines is shown whole. Expanded view is the full text.
+ * Collapsed view stays within about two lines and 110 characters.
+ * Overflow ends on a whole word with «…». Expanded view is the full text.
  */
 export function visibleRecommendation(raw, options = {}) {
   const expanded = Boolean(options.expanded);
@@ -670,18 +830,10 @@ export function visibleRecommendation(raw, options = {}) {
   if (!full) return { text: "", more: false, moreLabel: "" };
   if (expanded) return { text: full, more: false, moreLabel: "" };
 
-  let chosen = "";
-  const limit = Math.min(2, sentences.length);
-  for (let count = 1; count <= limit; count++) {
-    const candidate = sentences.slice(0, count).join(" ");
-    if (count > 1 && !fits(candidate)) break;
-    chosen = candidate;
-    if (count === 1 && !fits(candidate)) break;
-  }
-  if (!chosen) chosen = sentences[0];
-  const more = chosen !== full;
+  const text = clampRecommendation(full, { fits, maxChars: options.maxChars });
+  const more = text !== full;
   return {
-    text: chosen,
+    text,
     more,
     moreLabel: more ? RECOMMENDATION_MORE_LABEL : "",
   };

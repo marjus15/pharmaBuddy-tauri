@@ -681,7 +681,7 @@ function renderPreview(params) {
     return;
   }
 
-  if (state === "card-effects" || state === "card-fallback" || state === "basket") {
+  if (state === "card-effects" || state === "card-fallback" || state === "basket" || state === "panadol") {
     const at = (hours, minutes) => new Date(2026, 9, 30, hours, minutes).toISOString();
     const effectsExcerpt =
       "Οι συχνότερα αναφερόμενες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία, έμετος και καντιντίαση.";
@@ -703,6 +703,27 @@ function renderPreview(params) {
           sideEffectsStatus: "done",
           scannedAt: at(15, 6),
           recommendation: augmentinSuggestion,
+          errorMessage: null,
+          status: "done",
+        },
+      ]);
+      return;
+    }
+    if (state === "panadol") {
+      showPreviewDrugs([
+        {
+          id: "card-panadol",
+          barcode: "2801891515011",
+          found: true,
+          productName: "PANADOL ACTIFAST F.C.TAB",
+          formLabel: "Επικαλ. δισκία",
+          activeIngredient: "Paracetamol",
+          atcCode: "N02BE01",
+          sideEffects:
+            "Οι ανεπιθύμητες ενέργειες από ιστορικά δεδομένα κλινικών μελετών είναι σπάνιες και από μικρό αριθμό ασθενών. Αντίστοιχα, οι ανεπιθύμητες ενέργειες που έχουν αναφερθεί από την εκτενή εμπειρία μετά τ...",
+          sideEffectsStatus: "done",
+          scannedAt: at(15, 56),
+          recommendation: "Μαζί με Panadol, μια αναβράζουσα βιταμίνη C για το κρυολόγημα.",
           errorMessage: null,
           status: "done",
         },
@@ -1546,7 +1567,7 @@ function drugMetaText(drug) {
 const RECOMMENDATION_LINE_PX = 21;
 const RECOMMENDATION_TEXT_WIDTH = 304;
 
-function recommendationFitsThreeLines(text) {
+function recommendationFitsTwoLines(text) {
   const probe = document.createElement("p");
   probe.className = "recommendation-text";
   probe.textContent = text;
@@ -1566,9 +1587,9 @@ function recommendationFitsThreeLines(text) {
   probe.remove();
   if (height < 1) {
     const charsPerLine = Math.floor(RECOMMENDATION_TEXT_WIDTH / 8);
-    return text.length <= charsPerLine * 3;
+    return text.length <= charsPerLine * 2;
   }
-  return Math.round(height / RECOMMENDATION_LINE_PX) <= 3;
+  return Math.round(height / RECOMMENDATION_LINE_PX) <= 2;
 }
 
 function makeTag(text, suggestion, options = {}) {
@@ -1737,7 +1758,7 @@ function fillSuggestion(recBlock, drug) {
   } else {
     const recommendation = visibleRecommendation(drug.recommendation, {
       expanded: Boolean(drug.recommendationExpanded),
-      fits: recommendationFitsThreeLines,
+      fits: recommendationFitsTwoLines,
     });
     recBlock.classList.toggle("is-expanded", Boolean(drug.recommendationExpanded));
     recText.textContent = recommendation.text;

@@ -22,8 +22,10 @@ import {
   splitRecommendationSentences,
   suggestionRuleFor,
   trimAtWordBoundary,
+  clampRecommendation,
   visibleRecommendation,
   visibleSideEffects,
+  RECOMMENDATION_MAX_CHARS,
 } from "../src/widget-logic.mjs";
 
 const ASPIRIN_PUBLIC_EXCERPT =
@@ -212,40 +214,54 @@ test("pharmacist UI has no source line and uses the approved card", () => {
   assert.equal(/\.drug-side-effects[^}]*overflow-y:\s*auto/s.test(css), false);
 });
 
-test("recommendation shows whole sentences and a more row for the rest", () => {
-  const long =
-    "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό. Η διάρροια είναι συχνή. Το προβιοτικό την περιορίζει. Πάρτε το με νερό.";
-  assert.equal(splitRecommendationSentences(long).length, 4);
-  const twoFit = visibleRecommendation(long, { fits: () => true });
-  assert.equal(
-    twoFit.text,
-    "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό. Η διάρροια είναι συχνή.",
-  );
-  assert.equal(twoFit.text.endsWith("."), true);
-  assert.equal(twoFit.moreLabel, RECOMMENDATION_MORE_LABEL);
-  assert.equal(twoFit.moreLabel, "+ περισσότερα");
+test("recommendation stays within two lines and ends on a whole word", () => {
+  const style = "Μαζί με Panadol, μια αναβράζουσα βιταμίνη C για το κρυολόγημα.";
+  assert.ok([...style].length <= RECOMMENDATION_MAX_CHARS);
+  assert.equal(clampRecommendation(style), style);
+  assert.equal(visibleRecommendation(style, { fits: () => true }).text, style);
+  assert.equal(visibleRecommendation(style, { fits: () => true }).more, false);
 
-  const onlyFirstFits = visibleRecommendation(long, {
-    fits: (text) => !text.includes("Η διάρροια"),
+  const long =
+    "Με το Panadol Actifast καλό είναι να συνδυάσουμε μια αναβράζουσα βιταμίνη C. Θα ενισχύσει το ανοσοποιητικό σας για να περάσει πιο γρήγορα η ίωση.";
+  assert.ok([...long].length > RECOMMENDATION_MAX_CHARS);
+  const clamped = visibleRecommendation(long, { fits: () => true });
+  assert.equal(clamped.text.endsWith("…"), true);
+  assert.ok([...clamped.text].length <= RECOMMENDATION_MAX_CHARS);
+  assert.equal(clamped.moreLabel, RECOMMENDATION_MORE_LABEL);
+  const keptBody = clamped.text.slice(0, -1).trim();
+  assert.equal(long.startsWith(keptBody), true);
+  assert.equal(keptBody.endsWith(" "), false);
+  for (const word of keptBody.split(/\s+/)) {
+    assert.equal(long.includes(word), true);
+  }
+
+  const onlyOpening = visibleRecommendation(long, {
+    fits: (text) => !text.includes("Θα ενισχύσει"),
   });
-  assert.equal(onlyFirstFits.text, "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό.");
-  assert.equal(onlyFirstFits.more, true);
+  assert.equal(
+    onlyOpening.text,
+    "Με το Panadol Actifast καλό είναι να συνδυάσουμε μια αναβράζουσα βιταμίνη C. Θα…",
+  );
+  assert.equal(onlyOpening.more, true);
 
   const open = visibleRecommendation(long, { expanded: true, fits: () => false });
   assert.equal(open.text, long);
   assert.equal(open.more, false);
 
-  const oneLong = "Μία πολύ μεγάλη πρόταση που δεν χωράει σε τρεις γραμμές αλλά δεν κόβεται.";
-  const kept = visibleRecommendation(oneLong, { fits: () => false });
-  assert.equal(kept.text, oneLong);
-  assert.equal(kept.more, false);
+  const tooWide = visibleRecommendation(style, { fits: () => false });
+  assert.equal(tooWide.text, "Μαζί…");
+  assert.equal(tooWide.more, true);
+  assert.equal(/-webkit-line-clamp/.test(readFileSync("src/style.css", "utf8")), false);
 });
 
-test("the recommendation prompt asks for two short sentences", () => {
+test("the recommendation prompt asks for one short sentence without a health promise", () => {
   const source = readFileSync("supabase/functions/get-ai-recommendation/index.ts", "utf8");
-  assert.match(source, /Το πολύ 2 ολοκληρωμένες προτάσεις και περίπου 160 χαρακτήρες/);
-  assert.match(source, /Το πολύ 2 προτάσεις, περίπου 160 χαρακτήρες συνολικά/);
-  assert.match(source, /about 160 characters/);
+  assert.match(source, /ΜΙΑ μόνο ολοκληρωμένη πρόταση, έως περίπου 90 χαρακτήρες/);
+  assert.match(source, /ΜΙΑ πρόταση, έως περίπου 90 χαρακτήρες, χωρίς υποσχέσεις υγείας/);
+  assert.match(source, /about 90 characters at most, with no health promises/);
+  assert.match(source, /Μαζί με Panadol, μια αναβράζουσα βιταμίνη C για το κρυολόγημα/);
+  assert.match(source, /θα ενισχύσει το ανοσοποιητικό/);
+  assert.match(source, /θα περάσει πιο γρήγορα/);
 });
 
 test("a typed name does not keep another medicine's barcode", () => {
@@ -383,8 +399,31 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
   assert.equal(dosageFormLabel("AUGMENTIN F.C.TAB (875+125)MG"), "Επικαλ. δισκία");
 });
 
-test("the recommendation prompt may still mention one effect", () => {
+test("the recommendation prompt does not recite side effects", () => {
   const source = readFileSync("supabase/functions/get-ai-recommendation/index.ts", "utf8");
-  assert.match(source, /ΜΙΑ σχετική παρενέργεια/);
-  assert.match(source, /Μην εφευρίσκεις παρενέργειες/);
+  assert.match(source, /Μην αναφέρεις παρενέργειες στην πρόταση/);
+});
+
+const PANADOL_ACTIFAST_EXCERPT =
+  "Οι ανεπιθύμητες ενέργειες από ιστορικά δεδομένα κλινικών μελετών είναι σπάνιες και από μικρό αριθμό ασθενών. Αντίστοιχα, οι ανεπιθύμητες ενέργειες που έχουν αναφερθεί από την εκτενή εμπειρία μετά τ...";
+
+test("panadol actifast boilerplate and filler words are not chips", () => {
+  assert.equal([...PANADOL_ACTIFAST_EXCERPT].length, 200);
+  assert.deepEqual(sideEffectBullets(PANADOL_ACTIFAST_EXCERPT), []);
+  assert.equal(visibleSideEffects(PANADOL_ACTIFAST_EXCERPT, false).bullets.length, 0);
+  for (const filler of [
+    "Αντίστοιχα",
+    "Βλέπε",
+    "παρακάτω",
+    "επίσης",
+    "όπως",
+    "καθώς και",
+    "σπάνια",
+    "αναφέρθηκαν",
+  ]) {
+    assert.deepEqual(sideEffectBullets(filler), []);
+    assert.deepEqual(sideEffectBullets(`${filler}.`), []);
+  }
+  assert.deepEqual(sideEffectBullets(ASPIRIN_PUBLIC_EXCERPT), []);
+  assert.deepEqual(sideEffectBullets("ναυτία, εξάνθημα και ζάλη."), ["Ναυτία", "Εξάνθημα", "Ζάλη"]);
 });
