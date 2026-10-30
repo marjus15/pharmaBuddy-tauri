@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-10-30 — Aspirin side-effect heading and opaque scan card
+
+- The «Παρενέργειες» bullets no longer use the SmPC heading «Περίληψη του προφίλ ασφαλείας» (or «ασφάλειας»), «Κατάλογος ανεπιθύμητων ενεργειών», frequency labels, or table-header fragments. A cut-off Galinos fragment such as `περιε...` is dropped.
+- The public aspirin excerpt (barcode 2800416704022) has no named effects, so the card shows «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.» instead of «Περίληψη του προφίλ ασφαλείας Οι».
+- A bullet that is too long for one line is shortened on a whole word and ends with «…».
+- The medicine title and the side-effect / recommendation cards use solid backgrounds. The window around the orb stays transparent.
+- No edge function deploy and no database change.
+
 ## 2026-10-30 — Login window and honest connection errors
 
 - The login window is 380×460 and cannot shrink below that while the form is open. The form is centered so the title and «Είσοδος» stay on screen without a large empty area under the button.
