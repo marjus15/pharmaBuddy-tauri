@@ -1,4 +1,5 @@
 import {
+  CUSTOMER_IDLE_MS,
   FORGOT_PASSWORD_MESSAGE,
   INACTIVE_PHARMACY_MESSAGE,
   LOGIN_CONFIG_MESSAGE,
@@ -12,12 +13,20 @@ import {
   UNASSIGNED_PHARMACY_MESSAGE,
   UPDATE_NOTE,
   barcodeForManualName,
+  basketCountLabel,
+  cardMetaLine,
+  chooseExpandedId,
+  collapsedSideEffectCountLabel,
+  dosageFormLabel,
+  formatScanClock,
   latestDrugId,
   loginErrorOnStartup,
   loginFailureMessage,
   reduceUpdateUi,
   reportStatusFor,
-  trimAtWordBoundary,
+  sideEffectBullets,
+  sideEffectCountLabel,
+  suggestionRuleFor,
   visibleRecommendation,
   visibleSideEffects,
 } from "./widget-logic.mjs";
@@ -53,6 +62,7 @@ const $ = (id) => document.getElementById(id);
 
 const orb = $("orb");
 const drugSidebar = $("drug-sidebar");
+const basketBar = $("basket-bar");
 const drugList = $("drug-list");
 const manualEntryRow = $("manual-entry-row");
 const manualNameInput = $("manual-name-input");
@@ -114,6 +124,9 @@ const REPORT_EXAMPLE =
 /** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,sideEffects:string|null,sideEffectsStatus:string,manualEntry?:boolean,recommendation:string|null,errorMessage:string|null,status:string}>} */
 let scannedDrugs = [];
 let activeDrugId = null;
+let expandedDrugId = null;
+let userPinnedExpansion = false;
+let customerIdleTimer = null;
 let sidebarOpen = false;
 let processing = false;
 let lookupInFlight = false;
@@ -566,11 +579,27 @@ function browserPreview() {
   return params;
 }
 
+function showPreviewDrugs(drugs) {
+  scannedDrugs = drugs;
+  activeDrugId =
+    drugs.find((drug) => drug.status === "done" || drug.status === "error")?.id || null;
+  expandedDrugId = null;
+  userPinnedExpansion = false;
+  sidebarOpen = true;
+  drugSidebar.classList.remove("hidden");
+  drugSidebar.classList.add("visible");
+  const pharmacy = document.body.dataset.previewPharmacy || "";
+  if (pharmacy) updatePharmacyFooter(pharmacy);
+  renderDrugList();
+  setOrbState("idle");
+}
+
 function renderPreview(params) {
   document.body.classList.add("preview-stage");
   const state = params.get("preview");
   const email = params.get("email") || "pilot@farmakeio.gr";
   const pharmacy = params.get("pharmacy") || "Φαρμακείο Παπαδόπουλος";
+  document.body.dataset.previewPharmacy = pharmacy;
   hideActivationOverlay();
   hideLoginOverlay();
   setSettingsVisible(false);
@@ -649,6 +678,101 @@ function renderPreview(params) {
 
   if (state === "idle") {
     setOrbState("idle");
+    return;
+  }
+
+  if (state === "card-effects" || state === "card-fallback" || state === "basket") {
+    const at = (hours, minutes) => new Date(2026, 9, 30, hours, minutes).toISOString();
+    const effectsExcerpt =
+      "Οι συχνότερα αναφερόμενες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία, έμετος και καντιντίαση.";
+    const emptyExcerpt =
+      "Περίληψη του προφίλ ασφαλείας Οι καταγραφόμενες ανεπιθύμητες ενέργειες βασίζονται σε αυθόρμητες αναφορές μετά την κυκλοφορία του φαρμάκου.";
+    const augmentinSuggestion =
+      "Ένα προβιοτικό μαζί με την αντιβίωση προστατεύει το έντερο και προλαμβάνει τη διάρροια.";
+    if (state === "card-effects") {
+      showPreviewDrugs([
+        {
+          id: "card-effects",
+          barcode: "5201000000001",
+          found: true,
+          productName: "Augmentin 500+125mg",
+          formLabel: "Επικαλ. δισκία",
+          activeIngredient: "Amoxicillin / Clavulanic acid",
+          atcCode: "J01CR02",
+          sideEffects: effectsExcerpt,
+          sideEffectsStatus: "done",
+          scannedAt: at(15, 6),
+          recommendation: augmentinSuggestion,
+          errorMessage: null,
+          status: "done",
+        },
+      ]);
+      return;
+    }
+    if (state === "card-fallback") {
+      showPreviewDrugs([
+        {
+          id: "card-fallback",
+          barcode: "5201000000002",
+          found: true,
+          productName: "Depon Maximum 1g",
+          formLabel: "Αναβράζοντα δισκία",
+          activeIngredient: "Paracetamol",
+          atcCode: "N02BE01",
+          sideEffects: emptyExcerpt,
+          sideEffectsStatus: "done",
+          scannedAt: at(15, 8),
+          recommendation: "Για πυρετό, προτείνετε θερμόμετρο ή ορό ενυδάτωσης.",
+          errorMessage: null,
+          status: "done",
+        },
+      ]);
+      return;
+    }
+    showPreviewDrugs([
+      {
+        id: "basket-augmentin",
+        barcode: "5201000000001",
+        found: true,
+        productName: "Augmentin 500+125mg",
+        activeIngredient: "Amoxicillin / Clavulanic acid",
+        atcCode: "J01CR02",
+        sideEffects: "διάρροια, ναυτία και έμετος.",
+        sideEffectsStatus: "done",
+        scannedAt: at(15, 6),
+        recommendation: "Ένα προβιοτικό μαζί με την αντιβίωση προστατεύει το έντερο.",
+        errorMessage: null,
+        status: "done",
+      },
+      {
+        id: "basket-statin",
+        barcode: "5201000000003",
+        found: true,
+        productName: "Atorvastatin 20mg",
+        activeIngredient: "Atorvastatin",
+        atcCode: "C10AA05",
+        sideEffects: "μυαλγία και κεφαλαλγία.",
+        sideEffectsStatus: "done",
+        scannedAt: at(15, 7),
+        recommendation: null,
+        errorMessage: null,
+        status: "idle",
+      },
+      {
+        id: "basket-aspirin",
+        barcode: "2800416704022",
+        found: true,
+        productName: "Aspirin 100mg",
+        activeIngredient: "Acetylsalicylic acid",
+        atcCode: "B01AC06",
+        sideEffects: emptyExcerpt,
+        sideEffectsStatus: "done",
+        scannedAt: at(14, 58),
+        recommendation: null,
+        errorMessage: null,
+        status: "idle",
+      },
+    ]);
     return;
   }
 
@@ -1324,15 +1448,50 @@ async function openSidebar() {
   await resizeWindow("sidebar");
 }
 
+function clearCustomerIdle() {
+  if (customerIdleTimer) {
+    clearTimeout(customerIdleTimer);
+    customerIdleTimer = null;
+  }
+}
+
+function touchCustomerActivity() {
+  clearCustomerIdle();
+  if (scannedDrugs.length === 0 && !sidebarOpen) return;
+  customerIdleTimer = setTimeout(() => {
+    customerIdleTimer = null;
+    void startNewCustomer();
+  }, CUSTOMER_IDLE_MS);
+}
+
+function rememberExpansion(addedId) {
+  userPinnedExpansion = false;
+  expandedDrugId = chooseExpandedId(scannedDrugs, {
+    addedId,
+    previousExpandedId: expandedDrugId,
+  });
+}
+
 async function collapseSidebar() {
-  drugSidebar.classList.remove("visible");
+  clearCustomerIdle();
+  drugSidebar.classList.remove("visible", "has-cards");
   drugSidebar.classList.add("hidden");
   sidebarOpen = false;
   scannedDrugs = [];
   activeDrugId = null;
+  expandedDrugId = null;
+  userPinnedExpansion = false;
   drugList.innerHTML = "";
+  if (basketBar) {
+    basketBar.classList.add("hidden");
+    basketBar.replaceChildren();
+  }
   hideManualEntryRow();
   await resizeWindow(idleSizeKey());
+}
+
+async function startNewCustomer() {
+  await collapseSidebar();
 }
 
 function createDrugEntry(lookupResult, barcode) {
@@ -1345,6 +1504,7 @@ function createDrugEntry(lookupResult, barcode) {
     atcCode: lookupResult.atc_code || "",
     sideEffects: lookupResult.side_effects || null,
     sideEffectsStatus: lookupResult.side_effects ? "done" : "idle",
+    scannedAt: new Date().toISOString(),
     recommendation: null,
     errorMessage: null,
     status: "idle",
@@ -1360,160 +1520,31 @@ function highlightDrugRow(drugId) {
   el.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
-function syncDrugItemElement(el, drug) {
-  const btn = el.querySelector(".drug-name-btn");
-  const effectsBlock = el.querySelector(".drug-side-effects");
-  const effectsText = el.querySelector(".side-effects-text");
-  const effectsList = el.querySelector(".side-effects-list");
-  const moreBtn = el.querySelector(".side-effects-more");
-  const recBlock = el.querySelector(".drug-recommendation");
-  const recText = el.querySelector(".recommendation-text");
-  const recMore = el.querySelector(".recommendation-more");
-
-  btn.textContent = shortDisplayName(drug.productName || drug.barcode);
-  btn.title = drug.productName || drug.barcode;
-  btn.disabled = processing && drug.status === "loading";
-  btn.classList.toggle("active", drug.id === activeDrugId);
-  btn.classList.toggle("loading", drug.status === "loading");
-
-  const view = visibleSideEffects(drug.sideEffects, Boolean(drug.sideEffectsExpanded));
-  if (view.bullets.length) {
-    effectsBlock.classList.remove("hidden", "loading", "is-missing");
-    effectsBlock.classList.toggle("is-expanded", Boolean(drug.sideEffectsExpanded));
-    effectsText.textContent = "";
-    effectsText.classList.add("is-hidden");
-    effectsList.classList.remove("is-hidden");
-    effectsList.replaceChildren(
-      ...view.bullets.map((text) => {
-        const li = document.createElement("li");
-        const shown = fitSideEffectBullet(text);
-        li.textContent = shown;
-        if (shown !== text) li.title = text;
-        return li;
-      }),
-    );
-    if (view.hiddenCount > 0) {
-      moreBtn.textContent = view.moreLabel;
-      moreBtn.classList.remove("is-hidden");
-    } else {
-      moreBtn.textContent = "";
-      moreBtn.classList.add("is-hidden");
-    }
-  } else if (drug.sideEffects && drug.sideEffectsStatus !== "loading") {
-    effectsBlock.classList.remove("hidden", "loading", "is-missing", "is-expanded");
-    effectsText.textContent = SIDE_EFFECTS_FALLBACK;
-    effectsText.classList.remove("is-hidden");
-    effectsList.replaceChildren();
-    effectsList.classList.add("is-hidden");
-    moreBtn.textContent = "";
-    moreBtn.classList.add("is-hidden");
-  } else if (drug.manualEntry && drug.sideEffectsStatus === "empty") {
-    effectsBlock.classList.remove("hidden", "loading", "is-expanded");
-    effectsBlock.classList.add("is-missing");
-    effectsText.textContent = MANUAL_NAME_NOT_FOUND_MESSAGE;
-    effectsText.classList.remove("is-hidden");
-    effectsList.replaceChildren();
-    effectsList.classList.add("is-hidden");
-    moreBtn.textContent = "";
-    moreBtn.classList.add("is-hidden");
-  } else if (drug.sideEffectsStatus === "loading") {
-    effectsBlock.classList.remove("hidden", "is-expanded", "is-missing");
-    effectsBlock.classList.add("loading");
-    effectsText.textContent = "Αναζήτηση παρενεργειών…";
-    effectsText.classList.remove("is-hidden");
-    effectsList.replaceChildren();
-    effectsList.classList.add("is-hidden");
-    moreBtn.textContent = "";
-    moreBtn.classList.add("is-hidden");
-  } else {
-    effectsBlock.classList.add("hidden");
-    effectsBlock.classList.remove("loading", "is-expanded", "is-missing");
-    effectsText.textContent = "";
-    effectsText.classList.add("is-hidden");
-    effectsList.replaceChildren();
-    effectsList.classList.add("is-hidden");
-    moreBtn.textContent = "";
-    moreBtn.classList.add("is-hidden");
-  }
-
-  const isActive = drug.id === activeDrugId;
-
-  const showRecommendationMore = (label) => {
-    if (!label) {
-      recMore.textContent = "";
-      recMore.classList.add("is-hidden");
-      return;
-    }
-    recMore.textContent = label;
-    recMore.classList.remove("is-hidden");
-  };
-
-  if (drug.status === "loading") {
-    recBlock.classList.remove("hidden", "error", "is-expanded");
-    recText.textContent = "Αναμονή πρότασης…";
-    showRecommendationMore("");
-  } else if (isActive && drug.status === "done" && drug.recommendation) {
-    const recommendation = visibleRecommendation(drug.recommendation, {
-      expanded: Boolean(drug.recommendationExpanded),
-      fits: recommendationFitsThreeLines,
-    });
-    recBlock.classList.remove("hidden", "error");
-    recBlock.classList.toggle("is-expanded", Boolean(drug.recommendationExpanded));
-    recText.textContent = recommendation.text;
-    showRecommendationMore(recommendation.moreLabel);
-  } else if (isActive && drug.status === "error" && drug.errorMessage) {
-    recBlock.classList.remove("hidden", "is-expanded");
-    recBlock.classList.add("error");
-    recText.textContent = drug.errorMessage;
-    showRecommendationMore("");
-  } else {
-    recBlock.classList.add("hidden");
-    recBlock.classList.remove("error", "is-expanded");
-    recText.textContent = "";
-    showRecommendationMore("");
-  }
+function cardTitle(fullName) {
+  const raw = String(fullName ?? "").trim();
+  if (!raw) return "—";
+  if (raw.length <= 42 && !/\b(?:BT|BLISTER|ΣΕ)\b/i.test(raw)) return raw;
+  return shortDisplayName(raw);
 }
 
-const RECOMMENDATION_LINE_PX = 26;
-const RECOMMENDATION_TEXT_WIDTH = 336;
-const SIDE_EFFECT_BULLET_WIDTH = 312;
-
-function sideEffectBulletFits(text) {
-  const probe = document.createElement("span");
-  probe.textContent = text;
-  probe.style.position = "absolute";
-  probe.style.left = "-9999px";
-  probe.style.top = "0";
-  probe.style.visibility = "hidden";
-  probe.style.whiteSpace = "nowrap";
-  probe.style.fontSize = "18px";
-  probe.style.fontWeight = "400";
-  probe.style.fontFamily = '"Segoe UI Variable", "Segoe UI", sans-serif';
-  document.body.appendChild(probe);
-  const width = probe.getBoundingClientRect().width;
-  probe.remove();
-  if (width < 1) return [...text].length <= 34;
-  return width <= SIDE_EFFECT_BULLET_WIDTH;
+function chipCountFor(drug) {
+  if (!drug?.sideEffects) return 0;
+  return sideEffectBullets(drug.sideEffects).length;
 }
 
-function fitSideEffectBullet(text) {
-  const value = String(text || "");
-  if (!value || sideEffectBulletFits(value)) return value;
-  let best = trimAtWordBoundary(value, 8);
-  let lo = 2;
-  let hi = [...value].length;
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    const candidate = trimAtWordBoundary(value, mid);
-    if (sideEffectBulletFits(candidate)) {
-      best = candidate;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return best;
+function drugMetaText(drug) {
+  const count = scannedDrugs.length;
+  const index = scannedDrugs.findIndex((item) => item.id === drug.id) + 1;
+  return cardMetaLine({
+    formLabel: count > 1 ? "" : drug.formLabel || dosageFormLabel(drug.productName),
+    clock: formatScanClock(drug.scannedAt),
+    index: count > 1 ? index : 0,
+    count,
+  });
 }
+
+const RECOMMENDATION_LINE_PX = 21;
+const RECOMMENDATION_TEXT_WIDTH = 304;
 
 function recommendationFitsThreeLines(text) {
   const probe = document.createElement("p");
@@ -1527,87 +1558,90 @@ function recommendationFitsThreeLines(text) {
   probe.style.width = `${RECOMMENDATION_TEXT_WIDTH}px`;
   probe.style.margin = "0";
   probe.style.padding = "0";
-  probe.style.fontSize = "18px";
+  probe.style.fontSize = "15px";
   probe.style.lineHeight = `${RECOMMENDATION_LINE_PX}px`;
   probe.style.whiteSpace = "normal";
   document.body.appendChild(probe);
   const height = probe.getBoundingClientRect().height;
   probe.remove();
   if (height < 1) {
-    const charsPerLine = Math.floor(RECOMMENDATION_TEXT_WIDTH / 9);
+    const charsPerLine = Math.floor(RECOMMENDATION_TEXT_WIDTH / 8);
     return text.length <= charsPerLine * 3;
   }
   return Math.round(height / RECOMMENDATION_LINE_PX) <= 3;
 }
 
-function collapseDrugRecommendation(drugId) {
-  if (activeDrugId !== drugId) return;
-  activeDrugId = null;
-  renderDrugList();
-  resizeWindow("sidebar");
+function makeTag(text, suggestion, options = {}) {
+  const tag = document.createElement("span");
+  tag.className = suggestion ? "drug-tag is-suggestion" : "drug-tag";
+  tag.textContent = text;
+  if (options.title) tag.title = options.title;
+  if (options.label) tag.setAttribute("aria-label", options.label);
+  if (options.role) tag.setAttribute("role", options.role);
+  return tag;
 }
 
-let pendingClickTimer = null;
-let lastClickDrugId = null;
-let lastClickTime = 0;
-const DOUBLE_CLICK_MS = 350;
-
-function handleDrugNameClick(drugId) {
-  const now = Date.now();
-  const isDouble = drugId === lastClickDrugId && now - lastClickTime < DOUBLE_CLICK_MS;
-
-  if (isDouble) {
-    if (pendingClickTimer) {
-      clearTimeout(pendingClickTimer);
-      pendingClickTimer = null;
-    }
-    lastClickDrugId = null;
-    lastClickTime = 0;
-    collapseDrugRecommendation(drugId);
-    return;
-  }
-
-  lastClickDrugId = drugId;
-  lastClickTime = now;
-
-  if (pendingClickTimer) clearTimeout(pendingClickTimer);
-  pendingClickTimer = setTimeout(() => {
-    pendingClickTimer = null;
-    requestRecommendation(drugId);
-  }, DOUBLE_CLICK_MS);
-}
-
-function createDrugItemElement(drug) {
+function createCollapsedDrug(drug) {
   const item = document.createElement("div");
-  item.className = "drug-item";
+  item.className = "drug-item is-collapsed";
   item.dataset.drugId = drug.id;
 
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "drug-name-btn";
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    handleDrugNameClick(drug.id);
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "drug-row";
+
+  const name = document.createElement("span");
+  name.className = "drug-row-name";
+  name.textContent = cardTitle(drug.productName || drug.barcode);
+  name.title = drug.productName || drug.barcode;
+
+  const tags = document.createElement("span");
+  tags.className = "drug-row-tags";
+  const rule = suggestionRuleFor(drug);
+  if (rule) {
+    tags.appendChild(
+      makeTag("💡", true, { title: "Πρόταση", label: "Πρόταση", role: "img" }),
+    );
+  }
+  const chipCount = chipCountFor(drug);
+  const countLabel = collapsedSideEffectCountLabel(chipCount);
+  if (countLabel) {
+    tags.appendChild(makeTag(countLabel, false, { title: sideEffectCountLabel(chipCount) }));
+  }
+  if (!rule) tags.appendChild(makeTag("Χωρίς πρόταση", false));
+
+  const chevron = document.createElement("span");
+  chevron.className = "drug-row-chev";
+  chevron.textContent = "▾";
+  chevron.setAttribute("aria-hidden", "true");
+
+  row.append(name, tags, chevron);
+  row.addEventListener("click", (event) => {
+    event.stopPropagation();
+    touchCustomerActivity();
+    void requestRecommendation(drug.id);
   });
 
-  const effectsBlock = document.createElement("div");
-  effectsBlock.className = "drug-side-effects hidden";
+  item.appendChild(row);
+  return item;
+}
 
-  const effectsLabel = document.createElement("p");
-  effectsLabel.className = "side-effects-label";
-  effectsLabel.textContent = "Παρενέργειες";
+function fillSideEffects(effectsBlock, drug) {
+  const label = document.createElement("p");
+  label.className = "side-effects-label";
+  label.textContent = "Συχνές παρενέργειες";
 
   const effectsText = document.createElement("p");
   effectsText.className = "side-effects-text is-hidden";
 
-  const effectsList = document.createElement("ul");
-  effectsList.className = "side-effects-list";
+  const chips = document.createElement("div");
+  chips.className = "side-effect-chips is-hidden";
 
   const moreBtn = document.createElement("button");
   moreBtn.type = "button";
   moreBtn.className = "side-effects-more is-hidden";
-  moreBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
+  moreBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
     const current = findDrugById(drug.id);
     if (!current) return;
     current.sideEffectsExpanded = true;
@@ -1615,18 +1649,70 @@ function createDrugItemElement(drug) {
     void resizeWindow("sidebar");
   });
 
-  const effectsNote = document.createElement("p");
-  effectsNote.className = "side-effects-note";
-  effectsNote.textContent = SIDE_EFFECTS_TRUST_LINE;
+  const missing = drug.manualEntry && drug.sideEffectsStatus === "empty" && !drug.sideEffects;
+  if (missing) {
+    effectsBlock.classList.add("is-missing");
+    effectsText.textContent = MANUAL_NAME_NOT_FOUND_MESSAGE;
+    effectsText.classList.remove("is-hidden");
+    effectsBlock.append(effectsText);
+    return;
+  }
 
-  effectsBlock.appendChild(effectsLabel);
-  effectsBlock.appendChild(effectsText);
-  effectsBlock.appendChild(effectsList);
-  effectsBlock.appendChild(moreBtn);
-  effectsBlock.appendChild(effectsNote);
+  effectsBlock.append(label);
 
-  const recBlock = document.createElement("div");
-  recBlock.className = "drug-recommendation hidden";
+  if (drug.sideEffectsStatus === "loading" && !drug.sideEffects) {
+    effectsBlock.classList.add("loading");
+    effectsText.textContent = "Αναζήτηση παρενεργειών…";
+    effectsText.classList.add("is-note");
+    effectsText.classList.remove("is-hidden");
+    effectsBlock.append(effectsText);
+    return;
+  }
+
+  const view = visibleSideEffects(drug.sideEffects, Boolean(drug.sideEffectsExpanded));
+  if (view.bullets.length) {
+    chips.classList.remove("is-hidden");
+    chips.replaceChildren(
+      ...view.bullets.map((text) => {
+        const chip = document.createElement("span");
+        chip.className = "side-effect-chip";
+        chip.textContent = text;
+        return chip;
+      }),
+    );
+    effectsBlock.append(chips);
+    if (view.hiddenCount > 0) {
+      moreBtn.textContent = view.moreLabel;
+      moreBtn.classList.remove("is-hidden");
+      effectsBlock.append(moreBtn);
+    }
+    return;
+  }
+
+  if (drug.sideEffects || drug.sideEffectsStatus === "empty") {
+    effectsText.textContent = SIDE_EFFECTS_FALLBACK;
+    effectsText.classList.add("is-fallback");
+    effectsText.classList.remove("is-hidden");
+    effectsBlock.append(effectsText);
+    return;
+  }
+
+  effectsBlock.classList.add("is-hidden");
+}
+
+function fillSuggestion(recBlock, drug) {
+  const show =
+    drug.status === "loading" ||
+    (drug.status === "done" && drug.recommendation) ||
+    (drug.status === "error" && drug.errorMessage);
+  if (!show) {
+    recBlock.classList.add("is-hidden");
+    return;
+  }
+
+  const label = document.createElement("p");
+  label.className = "drug-suggestion-label";
+  label.textContent = "💡 Πρόταση στον πελάτη";
 
   const recText = document.createElement("p");
   recText.className = "recommendation-text";
@@ -1634,8 +1720,8 @@ function createDrugItemElement(drug) {
   const recMore = document.createElement("button");
   recMore.type = "button";
   recMore.className = "recommendation-more is-hidden";
-  recMore.addEventListener("click", (e) => {
-    e.stopPropagation();
+  recMore.addEventListener("click", (event) => {
+    event.stopPropagation();
     const current = findDrugById(drug.id);
     if (!current) return;
     current.recommendationExpanded = true;
@@ -1643,17 +1729,150 @@ function createDrugItemElement(drug) {
     void resizeWindow("sidebar");
   });
 
-  recBlock.appendChild(recText);
-  recBlock.appendChild(recMore);
+  if (drug.status === "loading") {
+    recText.textContent = "Αναμονή πρότασης…";
+  } else if (drug.status === "error") {
+    recBlock.classList.add("is-error");
+    recText.textContent = drug.errorMessage;
+  } else {
+    const recommendation = visibleRecommendation(drug.recommendation, {
+      expanded: Boolean(drug.recommendationExpanded),
+      fits: recommendationFitsThreeLines,
+    });
+    recBlock.classList.toggle("is-expanded", Boolean(drug.recommendationExpanded));
+    recText.textContent = recommendation.text;
+    if (recommendation.moreLabel) {
+      recMore.textContent = recommendation.moreLabel;
+      recMore.classList.remove("is-hidden");
+    }
+  }
 
-  item.appendChild(btn);
-  item.appendChild(effectsBlock);
-  item.appendChild(recBlock);
-  syncDrugItemElement(item, drug);
+  recBlock.append(label, recText, recMore);
+}
+
+function createExpandedDrug(drug) {
+  const item = document.createElement("div");
+  item.className = "drug-item is-expanded";
+  item.dataset.drugId = drug.id;
+
+  const card = document.createElement("article");
+  card.className = "drug-card";
+  const missing = drug.manualEntry && drug.sideEffectsStatus === "empty" && !drug.sideEffects;
+  if (missing) card.classList.add("is-missing");
+
+  const header = document.createElement("div");
+  header.className = "drug-card-hd";
+
+  const titles = document.createElement("div");
+  titles.className = "drug-card-titles";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "drug-name-btn";
+  btn.textContent = cardTitle(drug.productName || drug.barcode);
+  btn.title = drug.productName || drug.barcode;
+  btn.disabled = processing && drug.status === "loading";
+  btn.classList.toggle("active", drug.id === activeDrugId);
+  btn.classList.toggle("loading", drug.status === "loading");
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    touchCustomerActivity();
+    void requestRecommendation(drug.id);
+  });
+
+  const meta = document.createElement("p");
+  meta.className = "drug-meta";
+  meta.textContent = drugMetaText(drug);
+  if (!meta.textContent) meta.classList.add("is-hidden");
+
+  titles.append(btn, meta);
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "drug-card-toggle";
+  const single = scannedDrugs.length < 2;
+  toggle.textContent = single ? "×" : "▴";
+  toggle.setAttribute("aria-label", single ? "Κλείσιμο" : "Σύμπτυξη");
+  toggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    touchCustomerActivity();
+    if (single) {
+      void startNewCustomer();
+      return;
+    }
+    userPinnedExpansion = true;
+    expandedDrugId = null;
+    renderDrugList();
+    void resizeWindow("sidebar");
+  });
+
+  header.append(titles, toggle);
+
+  const recBlock = document.createElement("div");
+  recBlock.className = "drug-suggestion";
+  fillSuggestion(recBlock, drug);
+
+  const effectsBlock = document.createElement("div");
+  effectsBlock.className = "drug-side-effects";
+  fillSideEffects(effectsBlock, drug);
+
+  const footer = document.createElement("p");
+  footer.className = "drug-card-ft";
+  footer.textContent = SIDE_EFFECTS_TRUST_LINE;
+
+  card.append(header);
+  if (!recBlock.classList.contains("is-hidden")) card.append(recBlock);
+  if (!effectsBlock.classList.contains("is-hidden")) card.append(effectsBlock);
+  if (!missing) card.append(footer);
+  item.appendChild(card);
   return item;
 }
 
+function createDrugItemElement(drug) {
+  if (drug.id === expandedDrugId) return createExpandedDrug(drug);
+  if (scannedDrugs.length < 2) return createExpandedDrug(drug);
+  return createCollapsedDrug(drug);
+}
+
+function renderBasketBar() {
+  if (!basketBar) return;
+  basketBar.replaceChildren();
+  if (scannedDrugs.length < 2) {
+    basketBar.classList.add("hidden");
+    return;
+  }
+  basketBar.classList.remove("hidden");
+
+  const label = document.createElement("p");
+  label.className = "basket-label";
+  const title = document.createElement("span");
+  title.textContent = "Πελάτης · ";
+  const count = document.createElement("span");
+  count.className = "basket-count";
+  count.textContent = basketCountLabel(scannedDrugs.length);
+  label.append(title, count);
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "basket-new";
+  button.textContent = "+ Νέος πελάτης";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void startNewCustomer();
+  });
+  basketBar.append(label, button);
+}
+
 function renderDrugList() {
+  if (!expandedDrugId || !scannedDrugs.some((drug) => drug.id === expandedDrugId)) {
+    if (!userPinnedExpansion) {
+      expandedDrugId = chooseExpandedId(scannedDrugs, {
+        previousExpandedId: expandedDrugId,
+      });
+    }
+  }
+  renderBasketBar();
+  drugSidebar?.classList.toggle("has-cards", scannedDrugs.length > 0);
   drugList.innerHTML = "";
   const newestId = latestDrugId(scannedDrugs);
   for (const drug of scannedDrugs) {
@@ -1664,8 +1883,11 @@ function renderDrugList() {
 }
 
 function appendDrug(drug) {
+  if (!drug.scannedAt) drug.scannedAt = new Date().toISOString();
   scannedDrugs.push(drug);
+  rememberExpansion(drug.id);
   renderDrugList();
+  touchCustomerActivity();
   const el = drugList.querySelector(`[data-drug-id="${drug.id}"]`);
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
@@ -1695,11 +1917,13 @@ async function handleLookupResult(lookupResult, barcode) {
 
   const existing = findDrugByBarcode(barcode);
   if (existing) {
+    rememberExpansion(existing.id);
     void loadSideEffects(existing);
     highlightDrugRow(existing.id);
     setOrbState("success");
     triggerFlash();
     setTimeout(() => setOrbState("idle"), 400);
+    touchCustomerActivity();
     if (!sidebarOpen) await openSidebar();
     else await resizeWindow("sidebar");
     return;
@@ -1719,6 +1943,7 @@ async function handleLookupResult(lookupResult, barcode) {
 
   if (!sidebarOpen) await openSidebar();
   showManualEntryRow(barcode, lookupResult.miss_reason || "");
+  touchCustomerActivity();
   await resizeWindow("sidebar");
   setOrbState("idle");
 }
@@ -1754,6 +1979,7 @@ function addManualDrugFromInput() {
     sideEffects: null,
     sideEffectsStatus: "idle",
     manualEntry: true,
+    scannedAt: new Date().toISOString(),
     recommendation: null,
     errorMessage: null,
     status: "idle",
@@ -1776,6 +2002,7 @@ async function openManualEntry() {
   }
 
   showManualEntryRow(MANUAL_ENTRY_BARCODE, "");
+  touchCustomerActivity();
   await resizeWindow("sidebar");
 }
 
@@ -1826,6 +2053,11 @@ function loadSideEffects(drug) {
     })
     .finally(async () => {
       sideEffectLoads.delete(drug.id);
+      if (!userPinnedExpansion) {
+        expandedDrugId = chooseExpandedId(scannedDrugs, {
+          previousExpandedId: expandedDrugId,
+        });
+      }
       renderDrugList();
       if (sidebarOpen) await resizeWindow("sidebar");
     });
@@ -1840,7 +2072,10 @@ async function requestRecommendation(drugId) {
   const drug = findDrugById(drugId);
   if (!drug) return;
 
+  expandedDrugId = drugId;
+  userPinnedExpansion = true;
   activeDrugId = drugId;
+  touchCustomerActivity();
 
   if (drug.status === "done" && drug.recommendation) {
     applyCachedDrugClick(drug);
@@ -1941,6 +2176,7 @@ async function requestRecommendation(drugId) {
     setTimeout(() => setOrbState("idle"), 650);
   } finally {
     processing = false;
+    if (!findDrugById(drugId) || !sidebarOpen) return;
     renderDrugList();
     await resizeWindow("sidebar");
   }
@@ -1950,6 +2186,7 @@ async function processBarcode(rawBarcode) {
   const legacyReady = authMode === "legacy" && pharmacyActivated && pharmacyLicenseValid;
   if (!scansEnabled && !legacyReady) return;
   if (lookupInFlight) return;
+  touchCustomerActivity();
 
   updateOrbScanDisplay(rawBarcode, "pending");
 
@@ -2000,8 +2237,11 @@ function setupDrag() {
     if (target.closest("#settings-menu")) return;
     if (target.closest("#report-menu-btn")) return;
     if (target.closest("#logout-btn")) return;
+    if (target.closest(".basket-bar")) return;
     if (target.closest(".drug-name-btn")) return;
-    if (target.closest(".drug-recommendation")) return;
+    if (target.closest(".drug-card-toggle")) return;
+    if (target.closest(".drug-row")) return;
+    if (target.closest(".drug-suggestion")) return;
     if (target.closest(".drug-side-effects")) return;
     if (target.closest(".drug-list")) return;
 
@@ -2017,6 +2257,9 @@ function setupPanelControls() {
     e.stopPropagation();
     collapseSidebar();
   });
+
+  manualNameInput.addEventListener("input", () => touchCustomerActivity());
+  drugSidebar?.addEventListener("pointerdown", () => touchCustomerActivity());
 
   manualNameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {

@@ -164,7 +164,9 @@ test("widget copy and the two polish rules are in the ui", () => {
   assert.match(css, /\.report-sent-code \{[^}]*font-size:\s*18px/);
   assert.match(css, /\.report-sent-code \{[^}]*monospace/);
   assert.match(css, /\.orb-dock\.has-update-note \{[^}]*width:\s*308px/);
-  assert.match(css, /\.drug-item:first-child \.drug-name-btn \{[^}]*padding-right:\s*48px;/);
+  assert.match(css, /\.drug-sidebar\.has-cards \.sidebar-close-btn\s*\{[^}]*display:\s*none/s);
+  assert.match(css, /\.drug-card-hd\s*\{[^}]*justify-content:\s*space-between/s);
+  assert.match(js, /drug-card-toggle/);
   assert.match(css, /\.login-panel \{[^}]*padding:\s*24px/);
   assert.match(css, /\.login-fields \{[^}]*gap:\s*16px/);
   assert.match(css, /\.login-error\.hidden \{[^}]*display:\s*none/);

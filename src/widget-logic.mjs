@@ -109,8 +109,11 @@ export function reduceUpdateUi(state, event) {
   return { note, installNow: false };
 }
 
-export const SIDE_EFFECTS_TRUST_LINE =
-  "Βοηθητικές πληροφορίες. Η τελική απόφαση ανήκει στον φαρμακοποιό.";
+/** Footer on the product card. Must not name a data source. */
+export const SIDE_EFFECTS_TRUST_LINE = "ⓘ Τελική απόφαση: φαρμακοποιός";
+
+/** No scan and no basket interaction for this long starts a new customer. */
+export const CUSTOMER_IDLE_MS = 2 * 60 * 1000;
 
 /** Shown when an excerpt exists but no real side-effect names can be read from it. */
 export const SIDE_EFFECTS_FALLBACK = "Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.";
@@ -153,7 +156,7 @@ export function latestDrugId(drugs) {
 
 export const SIDE_EFFECT_VISIBLE_LIMIT = 5;
 
-const MAX_BULLET_WORDS = 5;
+const CHIP_MAX_WORDS = 3;
 
 const FREQUENCY_LABELS = [
   ["μη γνωστής συχνότητας", 6],
@@ -301,7 +304,15 @@ function isOverdose(sentence) {
 }
 
 function isSocHeader(text) {
-  return /^διαταραχ(?:ές|ών|ή)\b/iu.test(text);
+  const lower = lowerEl(text);
+  if (/^διαταραχ(?:ές|ών)(?![\p{L}])/u.test(lower)) return true;
+  if (/^(?:λοιμώξεις|παρασιτώσεις)(?![\p{L}])/u.test(lower)) return true;
+  if (/λοιμώξεις και παρασιτ/.test(lower)) return true;
+  if (/παρακλινικές εξετάσεις/.test(lower)) return true;
+  if (/νεοπλάσμα/.test(lower)) return true;
+  if (/οργανικού συστήματος/.test(lower)) return true;
+  if (/κακώσεις/.test(lower) && /δηλητηρ/.test(lower)) return true;
+  return false;
 }
 
 function isFrequencyOnly(text) {
@@ -440,17 +451,17 @@ function cleanItem(raw) {
   text = text.replace(/\s+/g, " ").trim();
   text = text.replace(/\s+σε\s+(?:μικρό|μεγάλο)\s+ποσοστό(?:\s+ασθεν\p{L}*)?$/iu, "");
   text = text.replace(/^(?:η|ο|το|οι|τα)\s+/iu, "");
+  text = text.replace(/^(?:του|της|των|στο|στη|στην|στον|στα|στις|στους|σε|με|από|για)\b.*$/iu, "");
   text = text.replace(/[.]+$/g, "").trim();
   text = text.replace(/\s+/g, " ").trim();
   if (!text || isSocHeader(text) || isFrequencyOnly(text) || isLegend(text) || isTableFragment(text)) {
     return "";
   }
-  const words = text.split(/\s+/).filter(Boolean);
-  let trimmedForLength = false;
-  if (words.length > MAX_BULLET_WORDS) {
-    text = words.slice(0, MAX_BULLET_WORDS).join(" ");
-    trimmedForLength = true;
+  if (/^(?:του|της|των|στο|στη|στην|στον|στα|στις|στους|σε|με|από|για)\b/u.test(lowerEl(text))) {
+    return "";
   }
+  text = shortenToChip(text);
+  if (!text) return "";
   let previous = "";
   while (text !== previous) {
     previous = text;
@@ -459,9 +470,34 @@ function cleanItem(raw) {
       "",
     );
   }
-  if (trimmedForLength && text) text = `${text}…`;
+  text = text.replace(/\s+/g, " ").trim();
+  if (!text || isCutOffFragment(text) || isSocHeader(text) || isFrequencyOnly(text) || isTableFragment(text)) {
+    return "";
+  }
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > CHIP_MAX_WORDS) return "";
+  if (words.some((word) => word.length < 3)) return "";
   if (text.length < 3 || !/[Α-Ωα-ωΆ-ώΪΫϊϋΐΰ]/u.test(text)) return "";
   return capitalizeGreek(text);
+}
+
+/** Keep a short effect name. Longer phrases survive only as the words before a preposition. */
+function shortenToChip(text) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+  const boundary =
+    /^(?:του|της|των|το|τα|τις|τους|στο|στη|στην|στον|στα|στις|στους|σε|με|από|για|και|ή)$/iu;
+  const head = [];
+  for (const word of words) {
+    if (boundary.test(word)) break;
+    head.push(word);
+    if (head.length === CHIP_MAX_WORDS) break;
+  }
+  if (head.length === 0) return "";
+  const next = words[head.length] || "";
+  if (next && boundary.test(next)) return head.join(" ");
+  if (words.length <= CHIP_MAX_WORDS) return words.join(" ");
+  return "";
 }
 
 /**
@@ -661,6 +697,170 @@ export function visibleSideEffects(raw, expanded = false) {
     hiddenCount,
     moreLabel: hiddenCount > 0 ? sideEffectsMoreLabel(hiddenCount) : "",
   };
+}
+
+function foldFacts(value) {
+  return String(value || "")
+    .toLocaleLowerCase("el")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+}
+
+function normalizeAtc(value) {
+  const raw = String(value || "").trim().toUpperCase();
+  if (!raw || raw === "N/A" || raw.includes("ΑΝΑΦΕΡ")) return "";
+  const match = raw.match(/[A-Z]\d{2}[A-Z0-9]*/);
+  return match ? match[0] : "";
+}
+
+/**
+ * Local cross-sell categories. These mirror the strict ATC rules in
+ * get-ai-recommendation and never call the model. A match only means the
+ * collapsed row may show «💡», with the name «Πρόταση» on hover.
+ */
+const SUGGESTION_RULES = [
+  {
+    id: "antibiotic",
+    atcPrefix: "J01",
+    needles: [
+      "augmentin",
+      "amoxicillin",
+      "amoxycillin",
+      "αμοξικιλλινη",
+      "αμοξυκιλλινη",
+      "ciprofloxacin",
+      "σιπροφλοξασινη",
+      "hexaquin",
+      "cefaclor",
+      "κεφακλορη",
+      "clarithromycin",
+      "κλαριθρομυκινη",
+      "zinadol",
+    ],
+  },
+  {
+    id: "statin",
+    atcPrefix: "C10",
+    needles: ["στατινη", "ατορβαστατινη", "ροσουβαστατινη", "σιμβαστατινη"],
+    statin: true,
+  },
+  {
+    id: "gastro",
+    atcPrefix: "A02",
+    needles: ["omeprazole", "ομεπραζολη", "pantoprazole", "παντοπραζολη"],
+  },
+  {
+    id: "diabetes",
+    atcPrefix: "A10",
+    needles: ["metformin", "μετφορμινη"],
+  },
+];
+
+function mentionsStatin(blob) {
+  const stripped = blob.replace(/nystatin/g, " ");
+  return /statin/.test(stripped);
+}
+
+export function suggestionRuleFor(drug) {
+  const atc = normalizeAtc(drug?.atcCode);
+  const blob = foldFacts(`${drug?.productName || ""} ${drug?.activeIngredient || ""}`);
+  for (const rule of SUGGESTION_RULES) {
+    if (atc.startsWith(rule.atcPrefix)) return { id: rule.id };
+    if (rule.statin && mentionsStatin(blob)) return { id: rule.id };
+    if (rule.needles.some((needle) => blob.includes(needle))) return { id: rule.id };
+  }
+  return null;
+}
+
+export function likelySuggestion(drug) {
+  return suggestionRuleFor(drug) != null;
+}
+
+/**
+ * One expanded card. A newly scanned product that matches a local rule takes
+ * the slot. Otherwise a product that already matches stays open. With no
+ * match, the product just scanned is the one shown.
+ */
+export function chooseExpandedId(drugs, options = {}) {
+  const list = Array.isArray(drugs) ? drugs.filter((drug) => drug && drug.id) : [];
+  if (list.length === 0) return null;
+  if (list.length === 1) return list[0].id;
+
+  const addedId = options.addedId ?? null;
+  const previousExpandedId = options.previousExpandedId ?? null;
+  const added = addedId ? list.find((drug) => drug.id === addedId) : null;
+  if (added && likelySuggestion(added)) return added.id;
+
+  const previous = previousExpandedId
+    ? list.find((drug) => drug.id === previousExpandedId)
+    : null;
+  if (previous && likelySuggestion(previous)) return previous.id;
+
+  const likely = list.find((drug) => likelySuggestion(drug));
+  if (likely) return likely.id;
+
+  if (added) return added.id;
+  if (previous) return previous.id;
+  return list[list.length - 1].id;
+}
+
+export function sideEffectCountLabel(count) {
+  const n = Number(count) || 0;
+  if (n <= 0) return "";
+  if (n === 1) return "1 παρενέργεια";
+  return `${n} παρενέργειες`;
+}
+
+/** Compact count for a collapsed row, so the dose stays on the name line. */
+export function collapsedSideEffectCountLabel(count) {
+  const n = Number(count) || 0;
+  if (n <= 0) return "";
+  return `${n} παρεν.`;
+}
+
+export function basketCountLabel(count) {
+  const n = Number(count) || 0;
+  if (n === 1) return "1 προϊόν";
+  return `${n} προϊόντα`;
+}
+
+export function formatScanClock(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+const DOSAGE_FORM_RULES = [
+  [/αναβράζ|αναβρ\.?|effervescen/i, "Αναβράζοντα δισκία"],
+  [/f\.?\s*c\.?\s*tab|film[-\s]?coated|επικαλυμμ/i, "Επικαλ. δισκία"],
+  [/dispers/i, "Δισκία διασπειρόμενα"],
+  [/\b(?:tabs?|δισκία|δισκίο)\b/i, "Δισκία"],
+  [/\b(?:caps?(?:ules)?|καψάκια|κάψουλες)\b/i, "Καψάκια"],
+  [/σιρόπ|σιροπι|\bsyr(?:up)?\b/i, "Σιρόπι"],
+  [/\b(?:cream|κρέμα)\b/i, "Κρέμα"],
+  [/\b(?:gel|γέλη)\b/i, "Γέλη"],
+  [/\bspray\b|εκνέφωμα/i, "Εκνέφωμα"],
+  [/σταγόν|drops\b|gutt/i, "Σταγόνες"],
+  [/υπόθετ|\bsupp\b/i, "Υπόθετα"],
+  [/ενέσιμ|\binj\b/i, "Ενέσιμο"],
+];
+
+export function dosageFormLabel(productName) {
+  const raw = String(productName || "");
+  for (const [pattern, label] of DOSAGE_FORM_RULES) {
+    if (pattern.test(raw)) return label;
+  }
+  return "";
+}
+
+export function cardMetaLine({ formLabel = "", clock = "", index = 0, count = 0 } = {}) {
+  const parts = [];
+  if (count > 1 && index > 0) parts.push(`${index} από ${count}`);
+  else if (formLabel) parts.push(formLabel);
+  if (clock) parts.push(clock);
+  return parts.join(" · ");
 }
 
 export function buildLatestJson({ version, signature, url, notes, pubDate }) {

@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-10-30 — Shorter tags on collapsed basket rows
+
+- A collapsed row shows «💡» instead of «💡 Πρόταση». Hover and the accessible name say «Πρόταση».
+- The side-effect count on that row is «N παρεν.» The full «N παρενέργειες» stays on hover.
+- The name still stays on one line and ends with «…» only when it does not fit. «Atorvastatin 20mg» fits at the current sidebar width.
+
+## 2026-10-30 — Basket row names and the cyan bar
+
+- A collapsed product name stays on one line and ends with «…» when it does not fit. The tags stay on the right.
+- The cyan left bar is only on the open card. Collapsed rows are the same, including the newest scan.
+
+## 2026-10-30 — Approved scan card and customer basket
+
+- A scanned product opens as one card: name, form and time, side-effect chips, and «ⓘ Τελική απόφαση: φαρμακοποιός». The card does not name a data source.
+- Side effects are short chips. Headings, frequency labels such as «Συχνές», organ-system lines, and cut-off words are dropped. A long phrase keeps only the words before «του/της/…». If nothing usable remains, the card shows «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.» in grey italic.
+- Products for the same customer stack in one list. One card is open. The others are rows tagged «💡 Πρόταση», «N παρενέργειες», or «Χωρίς πρόταση». «+ Νέος πελάτης» clears the list, and so does about two minutes without a scan or a click.
+- «💡 Πρόταση» is decided on the device from the ATC rules already used by the recommendation (J01 antibiotic, C10 statin, A02 acid-reducer, A10 diabetes). Scanning does not call `get-ai-recommendation`. That call still happens only when the pharmacist opens a product.
+- No edge function deploy and no database change.
+
 ## 2026-10-30 — Aspirin side-effect heading and opaque scan card
 
 - The «Παρενέργειες» bullets no longer use the SmPC heading «Περίληψη του προφίλ ασφαλείας» (or «ασφάλειας»), «Κατάλογος ανεπιθύμητων ενεργειών», frequency labels, or table-header fragments. A cut-off Galinos fragment such as `περιε...` is dropped.
