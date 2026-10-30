@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-30 — Filler chips and a short suggestion
+
+- PANADOL ACTIFAST stores a 200-character excerpt that never names an effect. It ends in the connector «Αντίστοιχα», which was showing up as a chip. Connector and reference words are dropped, and a chip is kept only when it contains a real effect term such as ναυτία or εξάνθημα. If nothing remains, the card shows «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.»
+- A suggestion that runs past about two lines or 110 characters is cut on a whole word and ends with «…». The line is not sliced in the middle.
+- The recommendation function source in the repo matches the already deployed version. This change does not deploy it.
+
 ## 2026-10-30 — Shorter tags on collapsed basket rows
 
 - A collapsed row shows «💡» instead of «💡 Πρόταση». Hover and the accessible name say «Πρόταση».
