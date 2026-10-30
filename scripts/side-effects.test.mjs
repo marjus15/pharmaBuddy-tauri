@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  CUSTOMER_IDLE_MS,
   MANUAL_ENTRY_BARCODE,
   MANUAL_NAME_NOT_FOUND_MESSAGE,
   RECOMMENDATION_MORE_LABEL,
@@ -9,10 +10,16 @@ import {
   SIDE_EFFECTS_FALLBACK,
   SIDE_EFFECTS_TRUST_LINE,
   barcodeForManualName,
+  basketCountLabel,
+  cardMetaLine,
+  chooseExpandedId,
+  dosageFormLabel,
   latestDrugId,
   sideEffectBullets,
+  sideEffectCountLabel,
   sideEffectsMoreLabel,
   splitRecommendationSentences,
+  suggestionRuleFor,
   trimAtWordBoundary,
   visibleRecommendation,
   visibleSideEffects,
@@ -136,19 +143,19 @@ test("headings, frequency labels, and table fragments are not bullets", () => {
   assert.deepEqual(sideEffectBullets("δυσπεψία, ναυτία και έμετ..."), ["Δυσπεψία", "Ναυτία"]);
 });
 
-test("a long bullet is trimmed on a word boundary and ends with an ellipsis", () => {
+test("a long effect stays a short term and a cut-off word is dropped", () => {
   const source = "Παρατεταμένη αιμορραγία του ανώτερου γαστρεντερικού σωλήνα";
   const bullets = sideEffectBullets(`${source}.`);
-  assert.equal(bullets.length, 1);
-  assert.equal(bullets[0].endsWith("…"), true);
-  const body = bullets[0].slice(0, -1).trim();
-  assert.equal(/\s$/.test(body), false);
-  for (const word of body.split(/\s+/)) {
-    assert.equal(source.includes(word), true);
+  assert.deepEqual(bullets, ["Παρατεταμένη αιμορραγία"]);
+  assert.equal(bullets.some((bullet) => /…|\.\.\./.test(bullet)), false);
+  assert.deepEqual(sideEffectBullets("Καντιντίαση του δέρματος και των βλεννογόνων."), [
+    "Καντιντίαση",
+  ]);
+  for (const bullet of bullets) {
+    assert.ok(bullet.split(/\s+/).length <= 3);
   }
-  assert.ok(body.split(/\s+/).length <= 5);
 
-  const fitted = trimAtWordBoundary(bullets[0], 32);
+  const fitted = trimAtWordBoundary(source, 32);
   assert.equal(fitted.endsWith("…"), true);
   assert.ok([...fitted].length <= 32);
   const fittedBody = fitted.slice(0, -1).trim();
@@ -167,50 +174,41 @@ test("blank and unknown excerpts render nothing", () => {
 });
 
 test("trust line is the pharmacist wording and does not name a source", () => {
-  assert.equal(
-    SIDE_EFFECTS_TRUST_LINE,
-    "Βοηθητικές πληροφορίες. Η τελική απόφαση ανήκει στον φαρμακοποιό.",
-  );
-  assert.equal(/γαλιν|galinos|πχπ/i.test(SIDE_EFFECTS_TRUST_LINE), false);
+  assert.equal(SIDE_EFFECTS_TRUST_LINE, "ⓘ Τελική απόφαση: φαρμακοποιός");
+  assert.equal(/γαλιν|galinos|πχπ|πηγ[ηή]/i.test(SIDE_EFFECTS_TRUST_LINE), false);
+  assert.equal(/γαλιν|galinos|πχπ|πηγ[ηή]/i.test(SIDE_EFFECTS_FALLBACK), false);
 });
 
-test("pharmacist UI has no Galinos excerpt and uses the readable sidebar sizes", () => {
+test("pharmacist UI has no source line and uses the approved card", () => {
   const ui = ["src/main.js", "src/index.html", "src/style.css"]
     .map((file) => readFileSync(file, "utf8"))
     .join("\n");
-  assert.equal(/Γαληνός|galinos\.gr|Απόσπασμα ΠΧΠ/i.test(ui), false);
-  assert.match(readFileSync("src/main.js", "utf8"), /SIDE_EFFECTS_TRUST_LINE/);
-  assert.match(readFileSync("src/main.js", "utf8"), /SIDE_EFFECTS_FALLBACK/);
-  assert.match(readFileSync("src/main.js", "utf8"), /trimAtWordBoundary/);
+  assert.equal(/Γαληνός|galinos|ΠΧΠ|Απόσπασμα|Πηγή|πηγή/i.test(ui), false);
+  const main = readFileSync("src/main.js", "utf8");
+  assert.match(main, /SIDE_EFFECTS_TRUST_LINE/);
+  assert.match(main, /SIDE_EFFECTS_FALLBACK/);
+  assert.match(main, /suggestionRuleFor\(/);
+  assert.match(main, /chooseExpandedId\(/);
+  assert.match(main, /CUSTOMER_IDLE_MS/);
+  assert.match(main, /\+ Νέος πελάτης/);
+  assert.equal((main.match(/invoke\(\s*"get_recommendation"/g) || []).length, 1);
   assert.match(readFileSync("src/index.html", "utf8"), /<html lang="el">/);
   const css = readFileSync("src/style.css", "utf8");
-  assert.match(css, /font-family:\s*"Segoe UI Variable",\s*"Segoe UI",\s*sans-serif/);
+  assert.match(css, /font-family:\s*"Segoe UI Variable",\s*"Segoe UI",\s*"Noto Sans",\s*sans-serif/);
   assert.match(css, /\.drug-sidebar\s*\{[^}]*width:\s*360px;/s);
   assert.match(css, /\.drug-sidebar\s*\{[^}]*max-width:\s*400px;/s);
-  assert.match(css, /\.drug-name-btn\s*\{[^}]*font-size:\s*22px;/s);
-  assert.match(css, /\.drug-name-btn\s*\{[^}]*font-weight:\s*600;/s);
-  assert.match(css, /\.side-effects-label\s*\{[^}]*font-size:\s*14px;/s);
-  assert.match(css, /\.side-effects-label\s*\{[^}]*font-weight:\s*600;/s);
-  assert.match(css, /\.side-effects-label\s*\{[^}]*text-transform:\s*none;/s);
-  assert.match(css, /\.side-effects-list li\s*\{[^}]*font-size:\s*18px;/s);
-  assert.match(css, /\.side-effects-list li\s*\{[^}]*line-height:\s*26px;/s);
-  assert.match(css, /\.side-effects-list li\s*\{[^}]*white-space:\s*nowrap;/s);
-  assert.equal(/\.side-effects-list li\s*\{[^}]*text-overflow:\s*ellipsis/s.test(css), false);
-  assert.match(css, /\.drug-name-btn\s*\{[^}]*background:\s*#004a58;/s);
-  assert.match(css, /\.drug-side-effects\s*\{[^}]*background:\s*#0e1116;/s);
-  assert.match(css, /\.drug-recommendation\s*\{[^}]*background:\s*#0e1116;/s);
+  assert.match(css, /\.drug-card\s*\{[^}]*background:\s*#0e1216;/s);
+  assert.match(css, /\.drug-card\s*\{[^}]*border-left:\s*4px solid #22d3ee;/s);
+  assert.match(css, /\.drug-name-btn\s*\{[^}]*font-size:\s*18px;/s);
+  assert.match(css, /\.drug-name-btn\s*\{[^}]*font-weight:\s*700;/s);
+  assert.match(css, /\.side-effects-label\s*\{[^}]*text-transform:\s*uppercase;/s);
+  assert.match(css, /\.side-effect-chip\s*\{[^}]*background:\s*#171e24;/s);
+  assert.match(css, /\.side-effects-text\.is-fallback,\s*\.side-effects-text\.is-note\s*\{[^}]*font-style:\s*italic;/s);
+  assert.match(css, /\.side-effects-text\.is-fallback,\s*\.side-effects-text\.is-note\s*\{[^}]*color:\s*#7f939c;/s);
+  assert.match(css, /\.drug-suggestion\s*\{[^}]*background:\s*#0f2a31;/s);
   assert.match(css, /html,\s*body\s*\{[^}]*background:\s*transparent;/s);
-  assert.match(css, /\.side-effects-note\s*\{[^}]*font-size:\s*13px;/s);
-  assert.match(css, /\.side-effects-note\s*\{[^}]*color:\s*#c9d6e4;/s);
-  assert.match(css, /\.side-effects-more,[\s\S]*?height:\s*32px;/);
-  assert.match(css, /\.drug-side-effects\s*\{[^}]*max-height:\s*260px;/s);
-  assert.match(css, /\.drug-side-effects\s*\{[^}]*overflow:\s*hidden;/s);
-  assert.match(css, /\.drug-recommendation\s*\{[^}]*overflow:\s*visible;/s);
-  assert.match(css, /\.recommendation-text\s*\{[^}]*font-size:\s*18px;/s);
-  assert.match(css, /\.recommendation-text\s*\{[^}]*line-height:\s*26px;/s);
   assert.equal(/\.recommendation-text\s*\{[^}]*-webkit-line-clamp/.test(css), false);
   assert.equal(/\.drug-side-effects[^}]*overflow-y:\s*auto/s.test(css), false);
-  assert.equal(/\.drug-recommendation[^}]*overflow-y:\s*auto/s.test(css), false);
 });
 
 test("recommendation shows whole sentences and a more row for the rest", () => {
@@ -313,11 +311,61 @@ test("a typed name with no match shows the empty sentence and does not reuse the
   assert.match(main, /MANUAL_NAME_NOT_FOUND_MESSAGE/);
   assert.match(main, /drug\.manualEntry && drug\.sideEffectsStatus === "empty"/);
   const css = readFileSync("src/style.css", "utf8");
-  assert.match(css, /\.drug-item\.is-latest \.drug-name-btn/);
-  assert.match(
-    css,
-    /\.drug-side-effects\.is-missing \.side-effects-note[\s\S]*display:\s*none/,
+  assert.match(css, /\.drug-item\.is-latest\.is-collapsed \.drug-row/);
+  assert.match(css, /\.drug-card\.is-missing \.drug-card-ft\s*\{[^}]*display:\s*none/s);
+});
+
+test("the suggestion tag follows local ATC rules and does not call the model", () => {
+  assert.equal(suggestionRuleFor({ atcCode: "J01CR02", productName: "Augmentin" })?.id, "antibiotic");
+  assert.equal(suggestionRuleFor({ atcCode: "", productName: "AUGMENTIN F.C.TAB" })?.id, "antibiotic");
+  assert.equal(
+    suggestionRuleFor({ atcCode: "", activeIngredient: "Amoxicillin" })?.id,
+    "antibiotic",
   );
+  assert.equal(suggestionRuleFor({ atcCode: "C10AA05", productName: "Atorvastatin" })?.id, "statin");
+  assert.equal(suggestionRuleFor({ atcCode: "", activeIngredient: "Rosuvastatin" })?.id, "statin");
+  assert.equal(suggestionRuleFor({ atcCode: "", productName: "Nystatin" }), null);
+  assert.equal(suggestionRuleFor({ atcCode: "A02BC01", productName: "Losec" })?.id, "gastro");
+  assert.equal(
+    suggestionRuleFor({ atcCode: "", productName: "Pantoprazole" })?.id,
+    "gastro",
+  );
+  assert.equal(
+    suggestionRuleFor({ atcCode: "A10BA02", activeIngredient: "Metformin" })?.id,
+    "diabetes",
+  );
+  assert.equal(
+    suggestionRuleFor({ atcCode: "N02BE01", productName: "Depon", activeIngredient: "Paracetamol" }),
+    null,
+  );
+  assert.equal(suggestionRuleFor({ atcCode: "B01AC06", productName: "Aspirin 100mg" }), null);
+  assert.equal(suggestionRuleFor({ atcCode: "N/A", productName: "Aspirin" }), null);
+
+  const drugs = [
+    { id: "aspirin", atcCode: "B01AC06", productName: "Aspirin" },
+    { id: "augmentin", atcCode: "J01CR02", productName: "Augmentin" },
+    { id: "statin", atcCode: "C10AA05", productName: "Atorvastatin" },
+  ];
+  assert.equal(
+    chooseExpandedId(drugs, { addedId: "statin", previousExpandedId: "augmentin" }),
+    "statin",
+  );
+  assert.equal(
+    chooseExpandedId(drugs, { addedId: "aspirin", previousExpandedId: "augmentin" }),
+    "augmentin",
+  );
+  assert.equal(chooseExpandedId([drugs[0]]), "aspirin");
+  assert.equal(sideEffectCountLabel(2), "2 παρενέργειες");
+  assert.equal(sideEffectCountLabel(1), "1 παρενέργεια");
+  assert.equal(sideEffectCountLabel(0), "");
+  assert.equal(basketCountLabel(3), "3 προϊόντα");
+  assert.equal(CUSTOMER_IDLE_MS, 120000);
+  assert.equal(
+    cardMetaLine({ formLabel: "Επικαλ. δισκία", clock: "15:06", count: 1 }),
+    "Επικαλ. δισκία · 15:06",
+  );
+  assert.equal(cardMetaLine({ index: 1, count: 3, clock: "15:06" }), "1 από 3 · 15:06");
+  assert.equal(dosageFormLabel("AUGMENTIN F.C.TAB (875+125)MG"), "Επικαλ. δισκία");
 });
 
 test("the recommendation prompt may still mention one effect", () => {
