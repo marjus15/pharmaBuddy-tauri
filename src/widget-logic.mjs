@@ -716,7 +716,7 @@ function normalizeAtc(value) {
 /**
  * Local cross-sell categories. These mirror the strict ATC rules in
  * get-ai-recommendation and never call the model. A match only means the
- * collapsed row may show «💡 Πρόταση».
+ * collapsed row may show «💡», with the name «Πρόταση» on hover.
  */
 const SUGGESTION_RULES = [
   {
@@ -809,6 +809,13 @@ export function sideEffectCountLabel(count) {
   if (n <= 0) return "";
   if (n === 1) return "1 παρενέργεια";
   return `${n} παρενέργειες`;
+}
+
+/** Compact count for a collapsed row, so the dose stays on the name line. */
+export function collapsedSideEffectCountLabel(count) {
+  const n = Number(count) || 0;
+  if (n <= 0) return "";
+  return `${n} παρεν.`;
 }
 
 export function basketCountLabel(count) {

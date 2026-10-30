@@ -13,6 +13,7 @@ import {
   basketCountLabel,
   cardMetaLine,
   chooseExpandedId,
+  collapsedSideEffectCountLabel,
   dosageFormLabel,
   latestDrugId,
   sideEffectBullets,
@@ -362,6 +363,16 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
   assert.equal(sideEffectCountLabel(2), "2 παρενέργειες");
   assert.equal(sideEffectCountLabel(1), "1 παρενέργεια");
   assert.equal(sideEffectCountLabel(0), "");
+  assert.equal(collapsedSideEffectCountLabel(2), "2 παρεν.");
+  assert.equal(collapsedSideEffectCountLabel(1), "1 παρεν.");
+  assert.equal(collapsedSideEffectCountLabel(0), "");
+  const main = readFileSync("src/main.js", "utf8");
+  assert.match(
+    main,
+    /makeTag\("💡", true, \{ title: "Πρόταση", label: "Πρόταση", role: "img" \}\)/,
+  );
+  assert.match(main, /collapsedSideEffectCountLabel\(chipCount\)/);
+  assert.equal(main.includes('makeTag("💡 Πρόταση"'), false);
   assert.equal(basketCountLabel(3), "3 προϊόντα");
   assert.equal(CUSTOMER_IDLE_MS, 120000);
   assert.equal(

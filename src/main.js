@@ -16,6 +16,7 @@ import {
   basketCountLabel,
   cardMetaLine,
   chooseExpandedId,
+  collapsedSideEffectCountLabel,
   dosageFormLabel,
   formatScanClock,
   latestDrugId,
@@ -1570,10 +1571,13 @@ function recommendationFitsThreeLines(text) {
   return Math.round(height / RECOMMENDATION_LINE_PX) <= 3;
 }
 
-function makeTag(text, suggestion) {
+function makeTag(text, suggestion, options = {}) {
   const tag = document.createElement("span");
   tag.className = suggestion ? "drug-tag is-suggestion" : "drug-tag";
   tag.textContent = text;
+  if (options.title) tag.title = options.title;
+  if (options.label) tag.setAttribute("aria-label", options.label);
+  if (options.role) tag.setAttribute("role", options.role);
   return tag;
 }
 
@@ -1594,9 +1598,16 @@ function createCollapsedDrug(drug) {
   const tags = document.createElement("span");
   tags.className = "drug-row-tags";
   const rule = suggestionRuleFor(drug);
-  if (rule) tags.appendChild(makeTag("💡 Πρόταση", true));
-  const countLabel = sideEffectCountLabel(chipCountFor(drug));
-  if (countLabel) tags.appendChild(makeTag(countLabel, false));
+  if (rule) {
+    tags.appendChild(
+      makeTag("💡", true, { title: "Πρόταση", label: "Πρόταση", role: "img" }),
+    );
+  }
+  const chipCount = chipCountFor(drug);
+  const countLabel = collapsedSideEffectCountLabel(chipCount);
+  if (countLabel) {
+    tags.appendChild(makeTag(countLabel, false, { title: sideEffectCountLabel(chipCount) }));
+  }
   if (!rule) tags.appendChild(makeTag("Χωρίς πρόταση", false));
 
   const chevron = document.createElement("span");

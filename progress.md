@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-30 — Shorter tags on collapsed basket rows
+
+- A collapsed row shows «💡» instead of «💡 Πρόταση». Hover and the accessible name say «Πρόταση».
+- The side-effect count on that row is «N παρεν.» The full «N παρενέργειες» stays on hover.
+- The name still stays on one line and ends with «…» only when it does not fit. «Atorvastatin 20mg» fits at the current sidebar width.
+
 ## 2026-10-30 — Basket row names and the cyan bar
 
 - A collapsed product name stays on one line and ends with «…» when it does not fit. The tags stay on the right.

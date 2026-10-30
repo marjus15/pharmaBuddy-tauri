@@ -467,9 +467,12 @@ body {
 }
 
 .drug-tag.is-suggestion {
+  padding: 1px 6px;
   border-color: #1f5b66;
   background: #0f2a31;
   color: #5fe3f5;
+  font-size: 13px;
+  line-height: 1.2;
 }
 
 .drug-row-chev {
