@@ -14,6 +14,8 @@ import {
   UPDATE_NOTE,
   barcodeForManualName,
   basketCountLabel,
+  basketExpandedId,
+  basketSuggestionKind,
   cardMetaLine,
   chooseExpandedId,
   collapsedSideEffectCountLabel,
@@ -26,7 +28,6 @@ import {
   reportStatusFor,
   sideEffectBullets,
   sideEffectCountLabel,
-  suggestionRuleFor,
   visibleRecommendation,
   visibleSideEffects,
 } from "./widget-logic.mjs";
@@ -681,7 +682,19 @@ function renderPreview(params) {
     return;
   }
 
-  if (state === "card-effects" || state === "card-fallback" || state === "basket" || state === "panadol") {
+  if (state === "orb-thinking") {
+    setOrbState("thinking");
+    return;
+  }
+
+  if (
+    state === "card-effects" ||
+    state === "card-fallback" ||
+    state === "basket" ||
+    state === "panadol" ||
+    state === "basket-pair" ||
+    state === "basket-loading"
+  ) {
     const at = (hours, minutes) => new Date(2026, 9, 30, hours, minutes).toISOString();
     const effectsExcerpt =
       "Οι συχνότερα αναφερόμενες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία, έμετος και καντιντίαση.";
@@ -748,6 +761,80 @@ function renderPreview(params) {
           status: "done",
         },
       ]);
+      return;
+    }
+    if (state === "basket-pair") {
+      showPreviewDrugs([
+        {
+          id: "pair-panadol",
+          barcode: "2801891515011",
+          found: true,
+          productName: "PANADOL ACTIFAST F.C.TAB",
+          formLabel: "Επικαλ. δισκία",
+          activeIngredient: "N02BE01",
+          atcCode: "2,65",
+          sideEffects: emptyExcerpt,
+          sideEffectsStatus: "done",
+          scannedAt: at(16, 30),
+          recommendation: "Μαζί με το Panadol, μια αναβράζουσα βιταμίνη C για το κρυολόγημα.",
+          errorMessage: null,
+          status: "done",
+        },
+        {
+          id: "pair-lipitor",
+          barcode: "2802342802025",
+          found: true,
+          productName: "LIPITOR F.C.TAB",
+          activeIngredient: "C10AA05",
+          atcCode: "4,84",
+          sideEffects: "μυαλγία και κεφαλαλγία.",
+          sideEffectsStatus: "done",
+          scannedAt: at(16, 31),
+          recommendation: null,
+          errorMessage: null,
+          status: "idle",
+        },
+      ]);
+      expandedDrugId = "pair-panadol";
+      userPinnedExpansion = true;
+      renderDrugList();
+      return;
+    }
+    if (state === "basket-loading") {
+      showPreviewDrugs([
+        {
+          id: "load-panadol",
+          barcode: "2801891515011",
+          found: true,
+          productName: "PANADOL ACTIFAST F.C.TAB",
+          formLabel: "Επικαλ. δισκία",
+          activeIngredient: "Paracetamol",
+          atcCode: "N02BE01",
+          sideEffects: null,
+          sideEffectsStatus: "loading",
+          scannedAt: at(16, 30),
+          recommendation: null,
+          errorMessage: null,
+          status: "loading",
+        },
+        {
+          id: "load-aspirin",
+          barcode: "2800416704022",
+          found: true,
+          productName: "Aspirin 100mg",
+          activeIngredient: "Acetylsalicylic acid",
+          atcCode: "B01AC06",
+          sideEffects: null,
+          sideEffectsStatus: "idle",
+          scannedAt: at(16, 31),
+          recommendation: null,
+          errorMessage: null,
+          status: "idle",
+        },
+      ]);
+      expandedDrugId = "load-panadol";
+      userPinnedExpansion = true;
+      renderDrugList();
       return;
     }
     showPreviewDrugs([
@@ -1594,7 +1681,10 @@ function recommendationFitsTwoLines(text) {
 
 function makeTag(text, suggestion, options = {}) {
   const tag = document.createElement("span");
-  tag.className = suggestion ? "drug-tag is-suggestion" : "drug-tag";
+  const classes = ["drug-tag"];
+  if (suggestion) classes.push("is-suggestion");
+  if (options.pending) classes.push("is-pending");
+  tag.className = classes.join(" ");
   tag.textContent = text;
   if (options.title) tag.title = options.title;
   if (options.label) tag.setAttribute("aria-label", options.label);
@@ -1618,18 +1708,21 @@ function createCollapsedDrug(drug) {
 
   const tags = document.createElement("span");
   tags.className = "drug-row-tags";
-  const rule = suggestionRuleFor(drug);
-  if (rule) {
+  const kind = basketSuggestionKind(drug);
+  if (kind === "ready") {
     tags.appendChild(
       makeTag("💡", true, { title: "Πρόταση", label: "Πρόταση", role: "img" }),
     );
+  } else if (kind === "pending") {
+    tags.appendChild(makeTag("💡 Δες πρόταση", false, { pending: true }));
+  } else {
+    tags.appendChild(makeTag("Χωρίς πρόταση", false));
   }
   const chipCount = chipCountFor(drug);
   const countLabel = collapsedSideEffectCountLabel(chipCount);
   if (countLabel) {
     tags.appendChild(makeTag(countLabel, false, { title: sideEffectCountLabel(chipCount) }));
   }
-  if (!rule) tags.appendChild(makeTag("Χωρίς πρόταση", false));
 
   const chevron = document.createElement("span");
   chevron.className = "drug-row-chev";
@@ -1822,7 +1915,7 @@ function createExpandedDrug(drug) {
       return;
     }
     userPinnedExpansion = true;
-    expandedDrugId = null;
+    expandedDrugId = scannedDrugs[0]?.id || null;
     renderDrugList();
     void resizeWindow("sidebar");
   });
@@ -1891,6 +1984,9 @@ function renderDrugList() {
         previousExpandedId: expandedDrugId,
       });
     }
+  }
+  if (scannedDrugs.length >= 2) {
+    expandedDrugId = basketExpandedId(scannedDrugs, expandedDrugId);
   }
   renderBasketBar();
   drugSidebar?.classList.toggle("has-cards", scannedDrugs.length > 0);
