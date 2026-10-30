@@ -58,7 +58,7 @@ test("login failures stay distinct from a real offline device", () => {
   );
   assert.equal(
     LOGIN_SERVER_MESSAGE,
-    "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος.",
+    "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά σε λίγο.",
   );
   assert.equal(
     FORGOT_PASSWORD_MESSAGE,
@@ -171,7 +171,12 @@ test("widget copy and the two polish rules are in the ui", () => {
   assert.doesNotMatch(css, /height:\s*calc\(1\.35em \* 4\)/);
   assert.match(css, /\.login-btn \{[^}]*margin-top:\s*0;/);
   assert.match(css, /\.login-orb \{[^}]*--orb-size:\s*48px/);
-  assert.match(js, /login: \{ width: 380, height: 520 \}/);
+  assert.match(js, /login: \{ width: 380, height: 460 \}/);
+  assert.match(css, /\.login-submit-block \{[^}]*gap:\s*12px/);
+  assert.match(css, /\.login-forgot-note \{[^}]*color:\s*#8fb8c6/);
+  assert.match(css, /\.login-panel \{[^}]*justify-content:\s*center/);
+  assert.match(html, /login-forgot-icon/);
+  assert.doesNotMatch(LOGIN_SERVER_MESSAGE, /Αναφορά προβλήματος/);
   assert.match(js, /setMinSize/);
   assert.match(js, /login-server/);
   assert.match(js, /login-config/);

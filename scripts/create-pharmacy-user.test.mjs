@@ -55,7 +55,7 @@ test("widget shows the three greek login errors", () => {
   assert.match(js, /Λάθος ρυθμίσεις εφαρμογής\. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy\./);
   assert.match(
     js,
-    /Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy\. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος\./,
+    /Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy\. Δοκιμάστε ξανά σε λίγο\./,
   );
   assert.match(js, /Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy για νέο κωδικό\./);
   assert.match(rust, /LOGIN_OFFLINE_MESSAGE/);

@@ -38,7 +38,7 @@ const SIDEBAR_WINDOW_MAX_WIDTH = 688;
 const SIZES = {
   collapsed: { width: 250, height: 288 },
   collapsedNote: { width: 336, height: 324 },
-  login: { width: 380, height: 520 },
+  login: { width: 380, height: 460 },
   sidebar: { width: 648, height: 320 },
   report: { width: 340, height: 460 },
 };
@@ -74,6 +74,7 @@ const loginError = $("login-error");
 const loginErrorText = $("login-error-text");
 const loginForgot = $("login-forgot");
 const loginForgotNote = $("login-forgot-note");
+const loginForgotText = $("login-forgot-text");
 const loginSubmit = $("login-submit");
 const settingsButton = $("orb-settings-btn");
 const settingsMenu = $("settings-menu");
@@ -164,13 +165,14 @@ function clearLoginError() {
 
 function showForgotPasswordNote() {
   if (!loginForgotNote) return;
-  loginForgotNote.textContent = FORGOT_PASSWORD_MESSAGE;
+  if (loginForgotText) loginForgotText.textContent = FORGOT_PASSWORD_MESSAGE;
+  else loginForgotNote.textContent = FORGOT_PASSWORD_MESSAGE;
   loginForgotNote.classList.remove("hidden");
 }
 
 function clearForgotPasswordNote() {
   if (!loginForgotNote) return;
-  loginForgotNote.textContent = "";
+  if (loginForgotText) loginForgotText.textContent = "";
   loginForgotNote.classList.add("hidden");
 }
 

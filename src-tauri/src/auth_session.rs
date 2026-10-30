@@ -14,7 +14,7 @@ pub const LOGIN_OFFLINE_MESSAGE: &str =
 pub const LOGIN_CONFIG_MESSAGE: &str =
     "Λάθος ρυθμίσεις εφαρμογής. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 pub const LOGIN_SERVER_MESSAGE: &str =
-    "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος.";
+    "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά σε λίγο.";
 pub const BAD_CREDENTIALS_MESSAGE: &str = "Λάθος στοιχεία";
 pub const INACTIVE_PHARMACY_MESSAGE: &str =
     "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
@@ -1100,7 +1100,7 @@ mod tests {
         );
         assert_eq!(
             LOGIN_SERVER_MESSAGE,
-            "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος."
+            "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά σε λίγο."
         );
         assert_ne!(LOGIN_OFFLINE_MESSAGE, LOGIN_SERVER_MESSAGE);
         assert_ne!(LOGIN_CONFIG_MESSAGE, LOGIN_SERVER_MESSAGE);

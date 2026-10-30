@@ -4,7 +4,7 @@ export const LOGIN_OFFLINE_MESSAGE =
 export const LOGIN_CONFIG_MESSAGE =
   "Λάθος ρυθμίσεις εφαρμογής. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 export const LOGIN_SERVER_MESSAGE =
-  "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος.";
+  "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά σε λίγο.";
 export const FORGOT_PASSWORD_MESSAGE =
   "Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy για νέο κωδικό.";
 export const UPDATE_NOTE = "↻ Νέα έκδοση στο επόμενο άνοιγμα";
