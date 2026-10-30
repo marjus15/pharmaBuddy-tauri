@@ -18,6 +18,7 @@ import {
   basketSuggestionKind,
   cardMetaLine,
   chooseExpandedId,
+  clampWindowToWorkArea,
   collapsedSideEffectCountLabel,
   dosageFormLabel,
   formatScanClock,
@@ -42,6 +43,7 @@ const listen = tauri?.event?.listen
   ? tauri.event.listen.bind(tauri.event)
   : async () => () => {};
 const LogicalSize = tauri?.window?.LogicalSize;
+const LogicalPosition = tauri?.window?.LogicalPosition;
 const WINDOW = tauri?.window?.getCurrentWindow ? tauri.window.getCurrentWindow() : null;
 
 // Sidebar column is 360px (CSS max 400). Width stays fixed so long names wrap
@@ -584,8 +586,8 @@ function showPreviewDrugs(drugs) {
   scannedDrugs = drugs;
   activeDrugId =
     drugs.find((drug) => drug.status === "done" || drug.status === "error")?.id || null;
-  expandedDrugId = null;
-  userPinnedExpansion = false;
+  expandedDrugId = drugs[0]?.id || null;
+  userPinnedExpansion = Boolean(expandedDrugId);
   sidebarOpen = true;
   drugSidebar.classList.remove("hidden");
   drugSidebar.classList.add("visible");
@@ -684,6 +686,40 @@ function renderPreview(params) {
 
   if (state === "orb-thinking") {
     setOrbState("thinking");
+    return;
+  }
+
+  const stackMatch = /^basket-(\d+)-(loading|loaded)$/.exec(state || "");
+  if (stackMatch) {
+    const count = Number(stackMatch[1]);
+    const mode = stackMatch[2];
+    const at = (hours, minutes) => new Date(2026, 9, 30, hours, minutes).toISOString();
+    const emptyExcerpt =
+      "Περίληψη του προφίλ ασφαλείας Οι καταγραφόμενες ανεπιθύμητες ενέργειες βασίζονται σε αυθόρμητες αναφορές μετά την κυκλοφορία του φαρμάκου.";
+    const catalog = [
+      ["aspirin", "ASPIRIN TAB", "2800416704022", "Acetylsalicylic acid", "B01AC06"],
+      ["xanax", "XANAX TABLET 0,25MG/TAB BT x 30", "2800000000001", "Alprazolam", "N05BA12"],
+      ["nurofen", "NUROFEN EXPRESS C.TAB", "2800000000002", "Ibuprofen", "M01AE01"],
+      ["panadol", "PANADOL ACTIFAST F.C.TAB", "2801891515011", "N02BE01", "2,65"],
+      ["lipitor", "LIPITOR F.C.TAB", "2802342802025", "C10AA05", "4,84"],
+      ["depon", "DEPON 500mg", "2800000000006", "Paracetamol", "N02BE01"],
+    ];
+    showPreviewDrugs(catalog.slice(0, count).map((item, index) => ({
+      id: `${mode}-${item[0]}`,
+      barcode: item[2],
+      found: true,
+      productName: item[1],
+      activeIngredient: item[3],
+      atcCode: item[4],
+      sideEffects: emptyExcerpt,
+      sideEffectsStatus: "done",
+      scannedAt: at(16, Math.max(0, 47 - index)),
+      recommendation: mode === "loaded" && index === 0
+        ? "Μαζί με το Aspirin, μια αναβράζουσα βιταμίνη C για το κρυολόγημα."
+        : null,
+      errorMessage: null,
+      status: index === 0 ? (mode === "loading" ? "loading" : "done") : "idle",
+    })));
     return;
   }
 
@@ -1481,35 +1517,149 @@ async function setWindowMinSize(size) {
   }
 }
 
+function layoutContentHeight() {
+  const layout = $("main-layout");
+  const collapsed = drugList?.querySelector(".drug-collapsed");
+  const overflow = collapsed
+    ? Math.max(0, collapsed.scrollHeight - collapsed.clientHeight)
+    : 0;
+  return (layout?.scrollHeight ?? 0) + overflow + WINDOW_LAYOUT_PADDING_Y;
+}
+
+function visibleFloorHeight() {
+  const orbHeight = (orbDock?.offsetHeight ?? 0) + WINDOW_LAYOUT_PADDING_Y;
+  const bar = basketBar && !basketBar.classList.contains("hidden") ? basketBar.offsetHeight + 8 : 0;
+  const card = drugList?.querySelector(".drug-item.is-expanded")?.offsetHeight ?? 0;
+  const cardHeight = card > 0 ? bar + card + WINDOW_LAYOUT_PADDING_Y : 0;
+  return Math.max(orbHeight, cardHeight);
+}
+
+async function readWorkArea() {
+  if (!WINDOW?.currentMonitor) return null;
+  try {
+    const monitor = await WINDOW.currentMonitor();
+    const area = monitor?.workArea;
+    const scale = monitor?.scaleFactor || (await WINDOW.scaleFactor?.()) || 1;
+    const rect = area?.size
+      ? {
+          x: area.position?.x || 0,
+          y: area.position?.y || 0,
+          width: area.size.width,
+          height: area.size.height,
+        }
+      : area && Number.isFinite(area.width)
+        ? area
+        : null;
+    if (!rect?.width || !rect?.height) return null;
+    return {
+      x: rect.x / scale,
+      y: rect.y / scale,
+      width: rect.width / scale,
+      height: rect.height / scale,
+    };
+  } catch (err) {
+    console.warn("[Window] work area:", err);
+    return null;
+  }
+}
+
+async function readWindowFrame() {
+  if (!WINDOW?.outerPosition || !WINDOW?.outerSize) return null;
+  try {
+    const [pos, size, scale] = await Promise.all([
+      WINDOW.outerPosition(),
+      WINDOW.outerSize(),
+      WINDOW.scaleFactor?.() ?? 1,
+    ]);
+    const factor = scale || 1;
+    return {
+      x: pos.x / factor,
+      y: pos.y / factor,
+      width: size.width / factor,
+      height: size.height / factor,
+    };
+  } catch (err) {
+    console.warn("[Window] frame:", err);
+    return null;
+  }
+}
+
+let applyingWindow = false;
+
+async function applyWindowBox(width, height, minHeight) {
+  const frame = await readWindowFrame();
+  const workArea = await readWorkArea();
+  let box = {
+    x: frame ? frame.x + frame.width - width : 0,
+    y: frame ? frame.y : 0,
+    width,
+    height,
+  };
+  if (workArea) {
+    box = clampWindowToWorkArea({ ...box, workArea, minHeight });
+  }
+  if (frame && LogicalPosition && WINDOW.setPosition) {
+    const moved = Math.abs(box.x - frame.x) > 1 || Math.abs(box.y - frame.y) > 1;
+    if (moved) await WINDOW.setPosition(new LogicalPosition(Math.round(box.x), Math.round(box.y)));
+  }
+  const sizeChanged = !frame
+    || Math.abs(box.width - frame.width) > 1
+    || Math.abs(box.height - frame.height) > 1;
+  if (sizeChanged) await WINDOW.setSize(new LogicalSize(Math.round(box.width), Math.round(box.height)));
+}
+
 async function resizeWindow(sizeKey) {
   if (loginIsOpen()) sizeKey = "login";
-  if (!WINDOW || !LogicalSize) return;
+  if (!WINDOW || !LogicalSize || applyingWindow) return;
   const size = SIZES[sizeKey];
+  applyingWindow = true;
+  try {
+    if (sizeKey === "login") {
+      await setWindowMinSize(size);
+      if (!loginIsOpen()) return;
+      await WINDOW.setSize(new LogicalSize(size.width, size.height));
+      return;
+    }
 
-  if (sizeKey === "login") {
-    await setWindowMinSize(size);
-    if (!loginIsOpen()) return;
-    await WINDOW.setSize(new LogicalSize(size.width, size.height));
-    return;
+    await setWindowMinSize(null);
+
+    if (sizeKey === "collapsed" || sizeKey === "collapsedNote" || sizeKey === "report") {
+      await applyWindowBox(size.width, size.height, size.height);
+      return;
+    }
+
+    await waitForLayout();
+    const contentHeight = layoutContentHeight();
+    const height = Math.max(size.height, contentHeight);
+    let width = size.width;
+    if (sizeKey === "sidebar") {
+      const contentWidth = ($("main-layout")?.scrollWidth ?? 0) + 24;
+      width = Math.min(SIDEBAR_WINDOW_MAX_WIDTH, Math.max(size.width, contentWidth));
+    }
+    await applyWindowBox(width, height, visibleFloorHeight());
+  } finally {
+    applyingWindow = false;
   }
+}
 
-  await setWindowMinSize(null);
+let sidebarResizeQueued = false;
 
-  if (sizeKey === "collapsed" || sizeKey === "collapsedNote" || sizeKey === "report") {
-    await WINDOW.setSize(new LogicalSize(size.width, size.height));
-    return;
-  }
+function scheduleSidebarResize() {
+  if (!WINDOW || !sidebarOpen || applyingWindow || sidebarResizeQueued) return;
+  sidebarResizeQueued = true;
+  requestAnimationFrame(() => {
+    sidebarResizeQueued = false;
+    void resizeWindow("sidebar");
+  });
+}
 
-  await waitForLayout();
-  const layout = $("main-layout");
-  const contentHeight = (layout?.scrollHeight ?? 0) + WINDOW_LAYOUT_PADDING_Y;
-  const height = Math.max(size.height, contentHeight);
-  let width = size.width;
-  if (sizeKey === "sidebar") {
-    const contentWidth = (layout?.scrollWidth ?? 0) + 24;
-    width = Math.min(SIDEBAR_WINDOW_MAX_WIDTH, Math.max(size.width, contentWidth));
-  }
-  await WINDOW.setSize(new LogicalSize(width, height));
+function setupLayoutObserver() {
+  if (typeof ResizeObserver !== "function") return;
+  const observer = new ResizeObserver(() => scheduleSidebarResize());
+  if (drugSidebar) observer.observe(drugSidebar);
+  if (drugList) observer.observe(drugList);
+  if (basketBar) observer.observe(basketBar);
+  if (orbDock) observer.observe(orbDock);
 }
 
 async function writeClipboard(text) {
@@ -1570,14 +1720,6 @@ function touchCustomerActivity() {
     customerIdleTimer = null;
     void startNewCustomer();
   }, CUSTOMER_IDLE_MS);
-}
-
-function rememberExpansion(addedId) {
-  userPinnedExpansion = false;
-  expandedDrugId = chooseExpandedId(scannedDrugs, {
-    addedId,
-    previousExpandedId: expandedDrugId,
-  });
 }
 
 async function collapseSidebar() {
@@ -1915,7 +2057,9 @@ function createExpandedDrug(drug) {
       return;
     }
     userPinnedExpansion = true;
-    expandedDrugId = scannedDrugs[0]?.id || null;
+    const index = scannedDrugs.findIndex((item) => item.id === drug.id);
+    const next = scannedDrugs[index + 1] || scannedDrugs.find((item) => item.id !== drug.id);
+    expandedDrugId = next?.id || drug.id;
     renderDrugList();
     void resizeWindow("sidebar");
   });
@@ -1940,12 +2084,6 @@ function createExpandedDrug(drug) {
   if (!missing) card.append(footer);
   item.appendChild(card);
   return item;
-}
-
-function createDrugItemElement(drug) {
-  if (drug.id === expandedDrugId) return createExpandedDrug(drug);
-  if (scannedDrugs.length < 2) return createExpandedDrug(drug);
-  return createCollapsedDrug(drug);
 }
 
 function renderBasketBar() {
@@ -1991,18 +2129,29 @@ function renderDrugList() {
   renderBasketBar();
   drugSidebar?.classList.toggle("has-cards", scannedDrugs.length > 0);
   drugList.innerHTML = "";
+  if (scannedDrugs.length === 0) return;
   const newestId = latestDrugId(scannedDrugs);
-  for (const drug of scannedDrugs) {
-    const el = createDrugItemElement(drug);
+  const open = scannedDrugs.find((drug) => drug.id === expandedDrugId) || scannedDrugs[0];
+  const openEl = createExpandedDrug(open);
+  openEl.classList.toggle("is-latest", open.id === newestId);
+  drugList.appendChild(openEl);
+  const collapsed = scannedDrugs.filter((drug) => drug.id !== open.id);
+  if (collapsed.length === 0) return;
+  const scroller = document.createElement("div");
+  scroller.className = "drug-collapsed";
+  for (const drug of collapsed) {
+    const el = createCollapsedDrug(drug);
     el.classList.toggle("is-latest", drug.id === newestId);
-    drugList.appendChild(el);
+    scroller.appendChild(el);
   }
+  drugList.appendChild(scroller);
 }
 
 function appendDrug(drug) {
   if (!drug.scannedAt) drug.scannedAt = new Date().toISOString();
-  scannedDrugs.push(drug);
-  rememberExpansion(drug.id);
+  scannedDrugs.unshift(drug);
+  userPinnedExpansion = false;
+  expandedDrugId = drug.id;
   renderDrugList();
   touchCustomerActivity();
   const el = drugList.querySelector(`[data-drug-id="${drug.id}"]`);
@@ -2034,7 +2183,9 @@ async function handleLookupResult(lookupResult, barcode) {
 
   const existing = findDrugByBarcode(barcode);
   if (existing) {
-    rememberExpansion(existing.id);
+    userPinnedExpansion = true;
+    expandedDrugId = existing.id;
+    renderDrugList();
     void loadSideEffects(existing);
     highlightDrugRow(existing.id);
     setOrbState("success");
@@ -2170,11 +2321,6 @@ function loadSideEffects(drug) {
     })
     .finally(async () => {
       sideEffectLoads.delete(drug.id);
-      if (!userPinnedExpansion) {
-        expandedDrugId = chooseExpandedId(scannedDrugs, {
-          previousExpandedId: expandedDrugId,
-        });
-      }
       renderDrugList();
       if (sidebarOpen) await resizeWindow("sidebar");
     });
@@ -2446,6 +2592,7 @@ async function init() {
   setupLogin();
   setupSettingsMenu();
   setupReport();
+  setupLayoutObserver();
 
   const preview = browserPreview();
   if (preview) {

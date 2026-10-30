@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-10-30 — Basket grows downward from the orb
+
+- The panel shares the orb's top edge and only grows downward. The window top stays put, and the height and position are clamped to the monitor work area so the window never crosses the top of the screen.
+- The newest product is inserted first and opens under the «Πελάτης» bar. Older products sit below it, collapsed.
+- The panel's max height is the window height minus 16px. When that is not enough, only the collapsed rows scroll. The customer bar and the open card stay on screen, and the orb is not clipped.
+- A ResizeObserver measures the basket again when the suggestion, the chips, or the open card change size.
+- The suggestion box keeps a fixed two-line height, so «Αναμονή πρότασης…» and the loaded sentence occupy the same space.
+
 ## 2026-10-30 — Basket tags, the open card, and the orb glow
 
 - A collapsed row shows the cyan «💡» when the card has a suggestion, from the AI text or a local ATC rule. While that answer is still loading it shows the grey «💡 Δες πρόταση». «Χωρίς πρόταση» appears only after an answer that has nothing to offer.

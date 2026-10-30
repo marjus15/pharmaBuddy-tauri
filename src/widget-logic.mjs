@@ -148,10 +148,59 @@ export function barcodeForManualName({ pendingBarcode, name, drugs }) {
   return pending;
 }
 
-/** The visit stack stays in scan order. The latest card is the last one. */
+/** The newest scan is inserted first. That card is the latest one. */
 export function latestDrugId(drugs) {
   if (!Array.isArray(drugs) || drugs.length === 0) return null;
-  return drugs[drugs.length - 1]?.id ?? null;
+  return drugs[0]?.id ?? null;
+}
+
+/** The basket panel stays this far inside the window, in CSS pixels. */
+export const PANEL_MAX_INSET = 16;
+
+export function panelMaxHeight(windowHeight) {
+  const height = Number(windowHeight);
+  if (!Number.isFinite(height)) return 0;
+  return Math.max(0, height - PANEL_MAX_INSET);
+}
+
+/**
+ * Keep the window inside the monitor work area.
+ * The top stays put so the panel grows downward. The right edge stays put
+ * so the orb does not jump. A window that would miss the orb is shifted up,
+ * but never above the work-area top.
+ */
+export function clampWindowToWorkArea({ x, y, width, height, workArea, minHeight = 0 } = {}) {
+  const areaX = Number(workArea?.x) || 0;
+  const areaY = Number(workArea?.y) || 0;
+  const areaW = Math.max(0, Number(workArea?.width) || 0);
+  const areaH = Math.max(0, Number(workArea?.height) || 0);
+  const bottom = areaY + areaH;
+  const right = areaX + areaW;
+  let nextW = areaW > 0 ? Math.min(Math.max(1, width), areaW) : Math.max(1, width);
+  let nextH = Math.max(1, Number(height) || 1);
+  let nextX = Number(x) || 0;
+  let nextY = Number(y) || 0;
+
+  if (nextY < areaY) nextY = areaY;
+  const roomBelow = Math.max(1, bottom - nextY);
+  if (nextH > roomBelow) nextH = roomBelow;
+
+  const floor = areaH > 0 ? Math.min(Math.max(0, minHeight), areaH) : Math.max(0, minHeight);
+  if (floor > 0 && nextH < floor) {
+    nextY = Math.max(areaY, bottom - floor);
+    nextH = Math.min(floor, Math.max(1, bottom - nextY));
+  }
+
+  if (nextX + nextW > right) nextX = right - nextW;
+  if (nextX < areaX) nextX = areaX;
+  if (areaW > 0 && nextX + nextW > right) nextW = Math.max(1, right - nextX);
+
+  return {
+    x: Math.round(nextX),
+    y: Math.round(nextY),
+    width: Math.round(nextW),
+    height: Math.round(nextH),
+  };
 }
 
 export const SIDE_EFFECT_VISIBLE_LIMIT = 5;
@@ -956,7 +1005,7 @@ export function likelySuggestion(drug) {
 /**
  * One expanded card. A newly scanned product that matches a local rule takes
  * the slot. Otherwise a product that already matches stays open. With no
- * match, the product just scanned is the one shown.
+ * match, the newest product is shown. The newest scan is first in the list.
  */
 export function chooseExpandedId(drugs, options = {}) {
   const list = Array.isArray(drugs) ? drugs.filter((drug) => drug && drug.id) : [];
@@ -978,7 +1027,7 @@ export function chooseExpandedId(drugs, options = {}) {
 
   if (added) return added.id;
   if (previous) return previous.id;
-  return list[list.length - 1].id;
+  return list[0].id;
 }
 
 export function sideEffectCountLabel(count) {

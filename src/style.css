@@ -55,7 +55,7 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   padding: 8px 12px 12px;
   overflow: visible;
@@ -126,8 +126,19 @@ body {
   display: none;
 }
 
+/* The panel shares the orb's top edge and grows downward. Past the window
+   minus 16px, only the collapsed rows scroll. */
+.drug-sidebar.has-cards:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+}
+
 .basket-bar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -172,12 +183,39 @@ body {
 
 .drug-list {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
   width: 100%;
-  overflow: visible;
+  min-height: 0;
+  overflow: hidden;
   padding: 2px 0;
+}
+
+.drug-item.is-expanded {
+  flex-shrink: 0;
+}
+
+.drug-collapsed {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-color: #2a4550 transparent;
+  scrollbar-width: thin;
+}
+
+.drug-collapsed::-webkit-scrollbar {
+  width: 8px;
+}
+
+.drug-collapsed::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: #2a4550;
 }
 
 .drug-item {
@@ -492,6 +530,7 @@ body {
 }
 
 .manual-entry-row {
+  flex-shrink: 0;
   width: 100%;
   margin-top: 4px;
 }
@@ -548,12 +587,21 @@ body {
 .recommendation-text {
   margin: 0;
   padding: 0;
+  height: calc(1.4em * 2);
+  overflow: hidden;
   color: #e8f4f6;
   font-size: 15px;
   line-height: 1.4;
   overflow-wrap: break-word;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.drug-suggestion.is-expanded .recommendation-text,
+.drug-suggestion.is-error .recommendation-text {
+  height: auto;
+  min-height: calc(1.4em * 2);
+  overflow: visible;
 }
 
 .panel-footer {
@@ -1757,10 +1805,6 @@ html.preview-login .login-overlay {
 
 body.preview-stage {
   background: #2b2f36;
-}
-
-body.preview-stage .app-root {
-  justify-content: flex-end;
 }
 
 body.preview-stage *,
