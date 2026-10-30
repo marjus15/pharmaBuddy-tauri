@@ -11,6 +11,8 @@ import {
   SIDE_EFFECTS_TRUST_LINE,
   barcodeForManualName,
   basketCountLabel,
+  basketExpandedId,
+  basketSuggestionKind,
   cardMetaLine,
   chooseExpandedId,
   collapsedSideEffectCountLabel,
@@ -190,7 +192,7 @@ test("pharmacist UI has no source line and uses the approved card", () => {
   const main = readFileSync("src/main.js", "utf8");
   assert.match(main, /SIDE_EFFECTS_TRUST_LINE/);
   assert.match(main, /SIDE_EFFECTS_FALLBACK/);
-  assert.match(main, /suggestionRuleFor\(/);
+  assert.match(main, /basketSuggestionKind\(/);
   assert.match(main, /chooseExpandedId\(/);
   assert.match(main, /CUSTOMER_IDLE_MS/);
   assert.match(main, /\+ Νέος πελάτης/);
@@ -345,6 +347,16 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
   );
   assert.equal(suggestionRuleFor({ atcCode: "C10AA05", productName: "Atorvastatin" })?.id, "statin");
   assert.equal(suggestionRuleFor({ atcCode: "", activeIngredient: "Rosuvastatin" })?.id, "statin");
+  assert.equal(
+    suggestionRuleFor({ atcCode: "4,84", activeIngredient: "C10AA05", productName: "LIPITOR F.C.TAB" })
+      ?.id,
+    "statin",
+  );
+  assert.equal(suggestionRuleFor({ atcCode: "", productName: "LIPITOR F.C.TAB" })?.id, "statin");
+  assert.equal(
+    suggestionRuleFor({ atcCode: "2,65", activeIngredient: "N02BE01", productName: "PANADOL ACTIFAST" }),
+    null,
+  );
   assert.equal(suggestionRuleFor({ atcCode: "", productName: "Nystatin" }), null);
   assert.equal(suggestionRuleFor({ atcCode: "A02BC01", productName: "Losec" })?.id, "gastro");
   assert.equal(
@@ -389,6 +401,46 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
   );
   assert.match(main, /collapsedSideEffectCountLabel\(chipCount\)/);
   assert.equal(main.includes('makeTag("💡 Πρόταση"'), false);
+  assert.match(main, /💡 Δες πρόταση/);
+  assert.match(main, /basketSuggestionKind\(drug\)/);
+  assert.match(main, /basketExpandedId\(scannedDrugs, expandedDrugId\)/);
+  const css = readFileSync("src/style.css", "utf8");
+  assert.match(css, /\.orb\s*\{[^}]*--orb-size:\s*144px;/s);
+  assert.match(css, /\.orb-dock\s*\{[^}]*padding-top:\s*12px;/s);
+  assert.match(css, /\.basket-bar\s*\{[^}]*background:\s*#0e1216;/s);
+  assert.equal(/\.orb-glass-plate\s*\{[^}]*top:\s*-4px/.test(css), false);
+  const panadol = {
+    productName: "PANADOL ACTIFAST",
+    atcCode: "2,65",
+    activeIngredient: "N02BE01",
+    recommendation: "Μαζί με το Panadol, μια αναβράζουσα βιταμίνη C για το κρυολόγημα.",
+    status: "done",
+  };
+  assert.equal(basketSuggestionKind(panadol), "ready");
+  assert.equal(
+    basketSuggestionKind({ ...panadol, recommendation: null, status: "loading" }),
+    "pending",
+  );
+  assert.equal(
+    basketSuggestionKind({ ...panadol, recommendation: "", status: "done" }),
+    "none",
+  );
+  assert.equal(
+    basketSuggestionKind({
+      productName: "LIPITOR F.C.TAB",
+      atcCode: "4,84",
+      activeIngredient: "C10AA05",
+      recommendation: null,
+      status: "idle",
+    }),
+    "ready",
+  );
+  const pair = [
+    { id: "panadol", productName: "PANADOL" },
+    { id: "lipitor", productName: "LIPITOR" },
+  ];
+  assert.equal(basketExpandedId(pair, null), "panadol");
+  assert.equal(basketExpandedId(pair, "lipitor"), "lipitor");
   assert.equal(basketCountLabel(3), "3 προϊόντα");
   assert.equal(CUSTOMER_IDLE_MS, 120000);
   assert.equal(

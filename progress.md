@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-10-30 — Basket tags, the open card, and the orb glow
+
+- A collapsed row shows the cyan «💡» when the card has a suggestion, from the AI text or a local ATC rule. While that answer is still loading it shows the grey «💡 Δες πρόταση». «Χωρίς πρόταση» appears only after an answer that has nothing to offer.
+- LIPITOR was missed because the catalog stores `C10AA05` in the ingredient field and a price in the ATC field, and the brand name was not in the rule. The rule now reads an ATC code from either field and knows the Lipitor name.
+- A basket of two or more products keeps the first card open instead of collapsing every row.
+- The «Πελάτης» title and «+ Νέος πελάτης» sit on the same dark surface as the cards.
+- The orb is 10% smaller (144px), and the dock keeps 12px above it, so the thinking ring and glow stay inside the window. The glass plate no longer sits 4px above the dock.
+
 ## 2026-10-30 — Filler chips and a short suggestion
 
 - PANADOL ACTIFAST stores a 200-character excerpt that never names an effect. It ends in the connector «Αντίστοιχα», which was showing up as a chip. Connector and reference words are dropped, and a chip is kept only when it contains a real effect term such as ναυτία or εξάνθημα. If nothing remains, the card shows «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.»

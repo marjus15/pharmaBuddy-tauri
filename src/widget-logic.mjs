@@ -893,7 +893,7 @@ const SUGGESTION_RULES = [
   {
     id: "statin",
     atcPrefix: "C10",
-    needles: ["στατινη", "ατορβαστατινη", "ροσουβαστατινη", "σιμβαστατινη"],
+    needles: ["στατινη", "ατορβαστατινη", "ροσουβαστατινη", "σιμβαστατινη", "lipitor"],
     statin: true,
   },
   {
@@ -913,15 +913,40 @@ function mentionsStatin(blob) {
   return /statin/.test(stripped);
 }
 
+function atcCandidates(drug) {
+  const codes = [normalizeAtc(drug?.atcCode), normalizeAtc(drug?.activeIngredient)];
+  return codes.filter((code, index) => code && codes.indexOf(code) === index);
+}
+
 export function suggestionRuleFor(drug) {
-  const atc = normalizeAtc(drug?.atcCode);
+  const atcs = atcCandidates(drug);
   const blob = foldFacts(`${drug?.productName || ""} ${drug?.activeIngredient || ""}`);
   for (const rule of SUGGESTION_RULES) {
-    if (atc.startsWith(rule.atcPrefix)) return { id: rule.id };
+    if (atcs.some((code) => code.startsWith(rule.atcPrefix))) return { id: rule.id };
     if (rule.statin && mentionsStatin(blob)) return { id: rule.id };
     if (rule.needles.some((needle) => blob.includes(needle))) return { id: rule.id };
   }
   return null;
+}
+
+/**
+ * Collapsed-row tag. «ready» is a real suggestion (local rule or AI text).
+ * «pending» is still waiting. «none» is an answer that had nothing to offer.
+ */
+export function basketSuggestionKind(drug) {
+  const text = String(drug?.recommendation || "").trim();
+  if (text || suggestionRuleFor(drug)) return "ready";
+  if (drug?.status === "done") return "none";
+  return "pending";
+}
+
+/** A basket of two or more always keeps one card open. An empty choice opens the first. */
+export function basketExpandedId(drugs, expandedId) {
+  const list = Array.isArray(drugs) ? drugs.filter((drug) => drug && drug.id) : [];
+  if (list.length === 0) return null;
+  if (list.length === 1) return list[0].id;
+  if (expandedId && list.some((drug) => drug.id === expandedId)) return expandedId;
+  return list[0].id;
 }
 
 export function likelySuggestion(drug) {

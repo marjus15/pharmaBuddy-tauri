@@ -131,7 +131,10 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 2px 0;
+  padding: 8px 10px;
+  border: 1px solid #1d2a31;
+  border-radius: 10px;
+  background: #0e1216;
   color: #e3eaee;
   font-size: 14px;
   font-weight: 700;
@@ -475,6 +478,12 @@ body {
   line-height: 1.2;
 }
 
+.drug-tag.is-pending {
+  border-color: #2a3740;
+  background: transparent;
+  color: #9fb7c1;
+}
+
 .drug-row-chev {
   flex-shrink: 0;
   color: #7f939c;
@@ -640,6 +649,8 @@ body {
   gap: 0;
   width: 250px;
   flex-shrink: 0;
+  /* The thinking scale (1.1) paints above the orb box. Padding keeps that ring inside the window. */
+  padding-top: 12px;
 }
 
 .orb-dock.has-update-note {
@@ -657,7 +668,7 @@ body {
 
 .orb-glass-plate {
   position: absolute;
-  top: -4px;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
   width: 214px;
@@ -861,7 +872,7 @@ body {
 
 /* ── Orb (scaled via --orb-size; design coords were 200px) ── */
 .orb {
-  --orb-size: 160px;
+  --orb-size: 144px;
   width: var(--orb-size);
   height: var(--orb-size);
   cursor: grab;
@@ -1756,6 +1767,11 @@ body.preview-stage *,
 body.preview-stage *::before,
 body.preview-stage *::after {
   animation-play-state: paused !important;
+}
+
+body.preview-stage .orb.state-thinking .radar-host {
+  animation: none;
+  transform: scale(1.1);
 }
 
 .update-note {
