@@ -2,12 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  FORGOT_PASSWORD_MESSAGE,
+  LOGIN_CONFIG_MESSAGE,
+  LOGIN_OFFLINE_MESSAGE,
+  LOGIN_SERVER_MESSAGE,
   OFFLINE_MESSAGE,
   REPORT_SENT_HINT,
   REPORT_SENT_MARK,
   UPDATE_NOTE,
   buildLatestJson,
   formatReportCode,
+  loginErrorOnStartup,
+  loginFailureMessage,
   reduceUpdateUi,
   reportStatusFor,
 } from "../src/widget-logic.mjs";
@@ -39,6 +45,64 @@ test("offline report uses the existing copy and keeps the text", () => {
   assert.equal(offline.keepDraft, true);
   assert.equal(offline.readOnly, false);
   assert.equal(offline.buttonLabel, "Αποστολή");
+});
+
+test("login failures stay distinct from a real offline device", () => {
+  assert.equal(
+    LOGIN_OFFLINE_MESSAGE,
+    "Δεν υπάρχει σύνδεση στο internet. Ελέγξτε τη σύνδεση και δοκιμάστε ξανά.",
+  );
+  assert.equal(
+    LOGIN_CONFIG_MESSAGE,
+    "Λάθος ρυθμίσεις εφαρμογής. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.",
+  );
+  assert.equal(
+    LOGIN_SERVER_MESSAGE,
+    "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος.",
+  );
+  assert.equal(
+    FORGOT_PASSWORD_MESSAGE,
+    "Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy για νέο κωδικό.",
+  );
+  assert.notEqual(LOGIN_OFFLINE_MESSAGE, OFFLINE_MESSAGE);
+  assert.equal(
+    loginFailureMessage({ online: false, errorText: "dns error: no such host" }),
+    LOGIN_OFFLINE_MESSAGE,
+  );
+  assert.equal(
+    loginFailureMessage({ online: true, errorText: "network error: dns lookup failed" }),
+    LOGIN_SERVER_MESSAGE,
+  );
+  assert.equal(
+    loginFailureMessage({ online: true, errorText: "error sending request: timed out" }),
+    LOGIN_SERVER_MESSAGE,
+  );
+  assert.equal(
+    loginFailureMessage({ online: true, errorText: "invalid peer certificate" }),
+    LOGIN_SERVER_MESSAGE,
+  );
+  assert.equal(
+    loginFailureMessage({ online: true, errorText: "Λείπει SUPABASE_FUNCTIONS_URL στο .env." }),
+    LOGIN_CONFIG_MESSAGE,
+  );
+  assert.equal(
+    loginFailureMessage({ online: true, errorText: "Λείπει SUPABASE_ANON_KEY στο .env." }),
+    LOGIN_CONFIG_MESSAGE,
+  );
+  assert.equal(loginErrorOnStartup({ error_code: "offline", error_message: LOGIN_OFFLINE_MESSAGE }), "");
+  assert.equal(loginErrorOnStartup({ error_code: "unreachable", error_message: LOGIN_SERVER_MESSAGE }), "");
+  assert.equal(loginErrorOnStartup({ error_code: "config", error_message: LOGIN_CONFIG_MESSAGE }), "");
+  assert.equal(
+    loginErrorOnStartup({ error_code: "invalid_credentials", error_message: "Λάθος στοιχεία" }),
+    "Λάθος στοιχεία",
+  );
+  assert.match(
+    loginErrorOnStartup({
+      error_code: "pharmacy_inactive",
+      error_message: "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.",
+    }),
+    /ανενεργός/,
+  );
 });
 
 test("update ui never installs during the shift", () => {
@@ -101,8 +165,21 @@ test("widget copy and the two polish rules are in the ui", () => {
   assert.match(css, /\.report-sent-code \{[^}]*monospace/);
   assert.match(css, /\.orb-dock\.has-update-note \{[^}]*width:\s*308px/);
   assert.match(css, /\.drug-item:first-child \.drug-name-btn \{[^}]*padding-right:\s*48px;/);
-  assert.match(css, /\.login-error \{[^}]*height:\s*calc\(1\.35em \* 4\)/);
+  assert.match(css, /\.login-panel \{[^}]*padding:\s*24px/);
+  assert.match(css, /\.login-fields \{[^}]*gap:\s*16px/);
+  assert.match(css, /\.login-error\.hidden \{[^}]*display:\s*none/);
+  assert.doesNotMatch(css, /height:\s*calc\(1\.35em \* 4\)/);
   assert.match(css, /\.login-btn \{[^}]*margin-top:\s*0;/);
+  assert.match(css, /\.login-orb \{[^}]*--orb-size:\s*48px/);
+  assert.match(js, /login: \{ width: 380, height: 520 \}/);
+  assert.match(js, /setMinSize/);
+  assert.match(js, /login-server/);
+  assert.match(js, /login-config/);
+  assert.match(js, /login-forgot/);
+  assert.match(js, /navigator\.onLine === false/);
+  assert.doesNotMatch(js, /includes\("network"\) \? OFFLINE_MESSAGE/);
+  assert.match(html, /Ξέχασα τον κωδικό/);
+  assert.match(html, /login-error-icon/);
   const conf = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   assert.equal(pkg.version, conf.version);

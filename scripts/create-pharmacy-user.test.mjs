@@ -51,7 +51,18 @@ test("widget shows the three greek login errors", () => {
   const html = readFileSync("src/index.html", "utf8");
   const rust = readFileSync("src-tauri/src/auth_session.rs", "utf8");
   assert.match(js, /Λάθος στοιχεία/);
-  assert.match(js, /Δεν υπάρχει σύνδεση στο internet/);
+  assert.match(js, /Δεν υπάρχει σύνδεση στο internet\. Ελέγξτε τη σύνδεση και δοκιμάστε ξανά\./);
+  assert.match(js, /Λάθος ρυθμίσεις εφαρμογής\. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy\./);
+  assert.match(
+    js,
+    /Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy\. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος\./,
+  );
+  assert.match(js, /Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy για νέο κωδικό\./);
+  assert.match(rust, /LOGIN_OFFLINE_MESSAGE/);
+  assert.match(rust, /LOGIN_CONFIG_MESSAGE/);
+  assert.match(rust, /LOGIN_SERVER_MESSAGE/);
+  assert.match(rust, /fn map_transport_error/);
+  assert.doesNotMatch(rust, /message: OFFLINE_MESSAGE\.into\(\)/);
   assert.match(
     js,
     /Ο λογαριασμός του φαρμακείου είναι ανενεργός\. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy\./,

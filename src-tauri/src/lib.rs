@@ -95,6 +95,12 @@ async fn submit_problem_report(
 }
 
 #[tauri::command]
+fn client_log(message: String) {
+    let clipped: String = message.chars().take(500).collect();
+    env_config::app_log(&format!("[UI] {clipped}"));
+}
+
+#[tauri::command]
 fn get_update_notice() -> Option<String> {
     if !updater::updates_enabled() {
         return None;
@@ -174,6 +180,7 @@ pub fn run() {
             login,
             logout,
             submit_problem_report,
+            client_log,
             get_update_notice
         ])
         .run(tauri::generate_context!())

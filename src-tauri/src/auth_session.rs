@@ -9,6 +9,12 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const OFFLINE_MESSAGE: &str = "Δεν υπάρχει σύνδεση στο internet";
+pub const LOGIN_OFFLINE_MESSAGE: &str =
+    "Δεν υπάρχει σύνδεση στο internet. Ελέγξτε τη σύνδεση και δοκιμάστε ξανά.";
+pub const LOGIN_CONFIG_MESSAGE: &str =
+    "Λάθος ρυθμίσεις εφαρμογής. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
+pub const LOGIN_SERVER_MESSAGE: &str =
+    "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος.";
 pub const BAD_CREDENTIALS_MESSAGE: &str = "Λάθος στοιχεία";
 pub const INACTIVE_PHARMACY_MESSAGE: &str =
     "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
@@ -357,18 +363,103 @@ fn legacy_gate() -> AuthGate {
     }
 }
 
-fn map_transport_error(err: &reqwest::Error) -> AuthFailure {
-    if err.is_builder() {
-        AuthFailure {
-            code: "config",
-            message: format!("Σφάλμα ρυθμίσεων: {err}"),
-        }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransportClass {
+    Config,
+    Offline,
+    Unreachable,
+}
+
+fn classify_transport(is_builder: bool, device_offline: bool) -> TransportClass {
+    if is_builder {
+        TransportClass::Config
+    } else if device_offline {
+        TransportClass::Offline
     } else {
-        AuthFailure {
-            code: "offline",
-            message: OFFLINE_MESSAGE.into(),
-        }
+        TransportClass::Unreachable
     }
+}
+
+fn failure_for_transport(class: TransportClass) -> AuthFailure {
+    match class {
+        TransportClass::Config => AuthFailure {
+            code: "config",
+            message: LOGIN_CONFIG_MESSAGE.into(),
+        },
+        TransportClass::Offline => AuthFailure {
+            code: "offline",
+            message: LOGIN_OFFLINE_MESSAGE.into(),
+        },
+        TransportClass::Unreachable => AuthFailure {
+            code: "unreachable",
+            message: LOGIN_SERVER_MESSAGE.into(),
+        },
+    }
+}
+
+fn mentions_os_error(text: &str, code: i32) -> bool {
+    let lower = text.to_ascii_lowercase();
+    let needle = format!("os error {code}");
+    let mut rest = lower.as_str();
+    while let Some(index) = rest.find(&needle) {
+        let after = index + needle.len();
+        let boundary_ok = rest[after..]
+            .chars()
+            .next()
+            .map(|ch| !ch.is_ascii_digit())
+            .unwrap_or(true);
+        if boundary_ok {
+            return true;
+        }
+        rest = &rest[index + needle.len()..];
+    }
+    false
+}
+
+fn text_says_device_offline(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("network is unreachable")
+        || lower.contains("network unreachable")
+        || lower.contains("network is down")
+        || lower.contains("network down")
+        || mentions_os_error(&lower, 10050)
+        || mentions_os_error(&lower, 10051)
+        || mentions_os_error(&lower, 100)
+        || mentions_os_error(&lower, 101)
+}
+
+fn io_error_is_device_offline(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::NetworkUnreachable | std::io::ErrorKind::NetworkDown
+    ) || matches!(err.raw_os_error(), Some(10050 | 10051 | 100 | 101))
+}
+
+fn error_chain_is_device_offline(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(err);
+    while let Some(item) = current {
+        if let Some(io_err) = item.downcast_ref::<std::io::Error>() {
+            if io_error_is_device_offline(io_err) {
+                return true;
+            }
+        }
+        if text_says_device_offline(&item.to_string()) {
+            return true;
+        }
+        current = item.source();
+    }
+    false
+}
+
+fn config_failure(detail: &str) -> AuthFailure {
+    env_config::app_log(&format!("[Auth] Config error: {detail}"));
+    failure_for_transport(TransportClass::Config)
+}
+
+fn map_transport_error(err: &reqwest::Error) -> AuthFailure {
+    let class = classify_transport(err.is_builder(), error_chain_is_device_offline(err));
+    env_config::app_log(&format!("[Auth] Transport {class:?}: {err}"));
+    failure_for_transport(class)
 }
 
 fn http_client(timeout: Duration) -> reqwest::Client {
@@ -379,18 +470,13 @@ fn http_client(timeout: Duration) -> reqwest::Client {
 }
 
 fn supabase_settings() -> Result<(String, String), AuthFailure> {
-    let functions_url = env_config::get_env("SUPABASE_FUNCTIONS_URL").ok_or_else(|| AuthFailure {
-        code: "config",
-        message: "Λείπει SUPABASE_FUNCTIONS_URL στο .env.".into(),
+    let functions_url = env_config::get_env("SUPABASE_FUNCTIONS_URL")
+        .ok_or_else(|| config_failure("Λείπει SUPABASE_FUNCTIONS_URL στο .env."))?;
+    let origin = supabase_origin_from(&functions_url).ok_or_else(|| {
+        config_failure(&format!("Μη έγκυρο SUPABASE_FUNCTIONS_URL: {functions_url}"))
     })?;
-    let origin = supabase_origin_from(&functions_url).ok_or_else(|| AuthFailure {
-        code: "config",
-        message: "Μη έγκυρο SUPABASE_FUNCTIONS_URL.".into(),
-    })?;
-    let anon = env_config::get_env("SUPABASE_ANON_KEY").ok_or_else(|| AuthFailure {
-        code: "config",
-        message: "Λείπει SUPABASE_ANON_KEY στο .env.".into(),
-    })?;
+    let anon = env_config::get_env("SUPABASE_ANON_KEY")
+        .ok_or_else(|| config_failure("Λείπει SUPABASE_ANON_KEY στο .env."))?;
     Ok((origin, anon))
 }
 
@@ -736,7 +822,7 @@ pub async fn current_gate() -> AuthGate {
                 empty_login_gate(Some("pharmacy_inactive"), Some(err.message))
             }
         }
-        Err(err) if err.code == "server" || err.code == "store" => {
+        Err(err) if err.code == "server" || err.code == "store" || err.code == "unreachable" => {
             if session.pharmacy_active && session.expires_at - now_unix() > 30 {
                 env_config::app_log("[Auth] Pharmacy recheck failed; keeping the current session");
                 gate_from_session(&session, None, None)
@@ -850,7 +936,10 @@ async fn ensure_access_token_locked() -> Result<String, AuthFailure> {
     }
     match refresh_session_locked(&session, REQUEST_REFRESH_LEAD_SECS, false).await {
         Ok(updated) => Ok(updated.access_token),
-        Err(err) if err.code == "offline" && session.expires_at - now_unix() > 30 => {
+        Err(err)
+            if (err.code == "offline" || err.code == "unreachable")
+                && session.expires_at - now_unix() > 30 =>
+        {
             Ok(session.access_token)
         }
         Err(err) => Err(err),
@@ -870,6 +959,9 @@ pub async fn function_auth() -> Result<FunctionAuth, String> {
     match ensure_access_token_locked().await {
         Ok(bearer) => Ok(FunctionAuth { bearer, apikey }),
         Err(err) if err.code == "offline" => Err(format!("Σφάλμα δικτύου: {OFFLINE_MESSAGE}")),
+        Err(err) if err.code == "unreachable" => {
+            Err(format!("Σφάλμα δικτύου: {LOGIN_SERVER_MESSAGE}"))
+        }
         Err(err) => Err(err.message),
     }
 }
@@ -891,6 +983,9 @@ pub async fn post_edge(url: &str, payload: &Value, timeout: Duration) -> Result<
             if let Err(err) = refresh_session_locked(&expired, REQUEST_REFRESH_LEAD_SECS, false).await {
                 if err.code == "offline" {
                     return Err(format!("Σφάλμα δικτύου: {OFFLINE_MESSAGE}"));
+                }
+                if err.code == "unreachable" {
+                    return Err(format!("Σφάλμα δικτύου: {LOGIN_SERVER_MESSAGE}"));
                 }
                 if err.code == "expired" || err.code == "invalid_credentials" {
                     clear_session_storage();
@@ -996,6 +1091,20 @@ mod tests {
         assert_eq!(BAD_CREDENTIALS_MESSAGE, "Λάθος στοιχεία");
         assert_eq!(OFFLINE_MESSAGE, "Δεν υπάρχει σύνδεση στο internet");
         assert_eq!(
+            LOGIN_OFFLINE_MESSAGE,
+            "Δεν υπάρχει σύνδεση στο internet. Ελέγξτε τη σύνδεση και δοκιμάστε ξανά."
+        );
+        assert_eq!(
+            LOGIN_CONFIG_MESSAGE,
+            "Λάθος ρυθμίσεις εφαρμογής. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy."
+        );
+        assert_eq!(
+            LOGIN_SERVER_MESSAGE,
+            "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος."
+        );
+        assert_ne!(LOGIN_OFFLINE_MESSAGE, LOGIN_SERVER_MESSAGE);
+        assert_ne!(LOGIN_CONFIG_MESSAGE, LOGIN_SERVER_MESSAGE);
+        assert_eq!(
             inactive_pharmacy_message(),
             "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy."
         );
@@ -1005,6 +1114,76 @@ mod tests {
         );
         assert!(!inactive_pharmacy_message().chars().any(|ch| ch.is_ascii_digit()));
         assert!(!unassigned_pharmacy_message().chars().any(|ch| ch.is_ascii_digit()));
+    }
+
+    #[test]
+    fn transport_failures_are_not_all_offline() {
+        assert_eq!(classify_transport(true, true), TransportClass::Config);
+        assert_eq!(classify_transport(true, false), TransportClass::Config);
+        assert_eq!(classify_transport(false, true), TransportClass::Offline);
+        assert_eq!(classify_transport(false, false), TransportClass::Unreachable);
+
+        let offline = failure_for_transport(TransportClass::Offline);
+        assert_eq!(offline.code, "offline");
+        assert_eq!(offline.message, LOGIN_OFFLINE_MESSAGE);
+
+        let config = failure_for_transport(TransportClass::Config);
+        assert_eq!(config.code, "config");
+        assert_eq!(config.message, LOGIN_CONFIG_MESSAGE);
+        assert!(!config.message.contains("SUPABASE_"));
+
+        let unreachable = failure_for_transport(TransportClass::Unreachable);
+        assert_eq!(unreachable.code, "unreachable");
+        assert_eq!(unreachable.message, LOGIN_SERVER_MESSAGE);
+        assert_ne!(unreachable.message, OFFLINE_MESSAGE);
+        assert_ne!(unreachable.message, LOGIN_OFFLINE_MESSAGE);
+    }
+
+    #[test]
+    fn only_a_down_network_counts_as_device_offline() {
+        assert!(io_error_is_device_offline(&std::io::Error::new(
+            std::io::ErrorKind::NetworkUnreachable,
+            "network unreachable"
+        )));
+        assert!(io_error_is_device_offline(&std::io::Error::new(
+            std::io::ErrorKind::NetworkDown,
+            "network down"
+        )));
+        assert!(!io_error_is_device_offline(&std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "timed out"
+        )));
+        assert!(!io_error_is_device_offline(&std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused"
+        )));
+        assert!(!io_error_is_device_offline(&std::io::Error::new(
+            std::io::ErrorKind::HostUnreachable,
+            "host unreachable"
+        )));
+
+        assert!(text_says_device_offline(
+            "tcp connect error: Network is unreachable (os error 101)"
+        ));
+        assert!(text_says_device_offline("os error 10051"));
+        assert!(text_says_device_offline("os error 10050"));
+        assert!(!text_says_device_offline(
+            "dns error: failed to lookup address information: No such host is known. (os error 11001)"
+        ));
+        assert!(!text_says_device_offline("operation timed out"));
+        assert!(!text_says_device_offline(
+            "connection refused (os error 10061)"
+        ));
+        assert!(!text_says_device_offline(
+            "connection timed out (os error 10060)"
+        ));
+        assert!(!text_says_device_offline("No route to host (os error 10065)"));
+        assert!(!text_says_device_offline(
+            "invalid peer certificate: UnknownIssuer"
+        ));
+        assert!(!mentions_os_error("os error 10061", 100));
+        assert!(!mentions_os_error("os error 10051", 100));
+        assert!(mentions_os_error("os error 10051", 10051));
     }
 
     #[test]

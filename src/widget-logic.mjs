@@ -1,4 +1,12 @@
 export const OFFLINE_MESSAGE = "Δεν υπάρχει σύνδεση στο internet";
+export const LOGIN_OFFLINE_MESSAGE =
+  "Δεν υπάρχει σύνδεση στο internet. Ελέγξτε τη σύνδεση και δοκιμάστε ξανά.";
+export const LOGIN_CONFIG_MESSAGE =
+  "Λάθος ρυθμίσεις εφαρμογής. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
+export const LOGIN_SERVER_MESSAGE =
+  "Δεν ήταν δυνατή η σύνδεση με το PharmaBuddy. Δοκιμάστε ξανά ή πατήστε Αναφορά προβλήματος.";
+export const FORGOT_PASSWORD_MESSAGE =
+  "Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy για νέο κωδικό.";
 export const UPDATE_NOTE = "↻ Νέα έκδοση στο επόμενο άνοιγμα";
 export const REPORT_SENT_MARK = "✓ Στάλθηκε";
 export const REPORT_SENT_HINT = "Πείτε αυτόν τον κωδικό στον υπεύθυνο του PharmaBuddy.";
@@ -6,6 +14,45 @@ export const INACTIVE_PHARMACY_MESSAGE =
   "Ο λογαριασμός του φαρμακείου είναι ανενεργός. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
 export const UNASSIGNED_PHARMACY_MESSAGE =
   "Ο λογαριασμός δεν είναι συνδεδεμένος με φαρμακείο. Επικοινωνήστε με τον υπεύθυνο του PharmaBuddy.";
+
+const LOGIN_DEFERRED_CODES = new Set(["offline", "unreachable", "config", "server", "store"]);
+
+/**
+ * Connectivity, config, and generic server failures stay hidden until Είσοδος.
+ * Credential and pharmacy-state messages still show when the session gate already has them.
+ */
+export function loginErrorOnStartup(gate) {
+  const code = String(gate?.error_code || "");
+  const message = String(gate?.error_message || "");
+  if (!message) return "";
+  if (
+    LOGIN_DEFERRED_CODES.has(code) ||
+    message === OFFLINE_MESSAGE ||
+    message === LOGIN_OFFLINE_MESSAGE ||
+    message === LOGIN_CONFIG_MESSAGE ||
+    message === LOGIN_SERVER_MESSAGE
+  ) {
+    return "";
+  }
+  return message;
+}
+
+/**
+ * A thrown login call is not proof the PC is offline.
+ * `online === false` is the device check. Config strings stay config. Everything else is "could not reach PharmaBuddy".
+ */
+export function loginFailureMessage({ online, errorText }) {
+  if (online === false) return LOGIN_OFFLINE_MESSAGE;
+  const text = String(errorText || "");
+  if (
+    /SUPABASE_FUNCTIONS_URL|SUPABASE_ANON_KEY/.test(text) ||
+    text.includes("Σφάλμα ρυθμίσεων") ||
+    /\bconfig\b/i.test(text)
+  ) {
+    return LOGIN_CONFIG_MESSAGE;
+  }
+  return LOGIN_SERVER_MESSAGE;
+}
 
 export function formatReportCode(code) {
   const clean = String(code || "")
