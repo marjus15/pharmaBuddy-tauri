@@ -11,10 +11,13 @@ import {
   SIDE_EFFECTS_TRUST_LINE,
   barcodeForManualName,
   basketCountLabel,
+  PANEL_MAX_INSET,
   basketExpandedId,
   basketSuggestionKind,
   cardMetaLine,
   chooseExpandedId,
+  clampWindowToWorkArea,
+  panelMaxHeight,
   collapsedSideEffectCountLabel,
   dosageFormLabel,
   latestDrugId,
@@ -306,17 +309,63 @@ test("a typed name does not keep another medicine's barcode", () => {
   );
 });
 
-test("the visit stack keeps scan order and marks the last card as latest", () => {
+test("the newest scan is inserted first and stays the latest card", () => {
   const drugs = [
-    { id: "augmentin", productName: "AUGMENTIN F.C.TAB" },
     { id: "zircos", productName: "zircos" },
+    { id: "augmentin", productName: "AUGMENTIN F.C.TAB" },
   ];
   assert.equal(latestDrugId(drugs), "zircos");
   assert.equal(latestDrugId([]), null);
+  assert.equal(
+    chooseExpandedId(
+      [{ id: "zircos", productName: "zircos" }, { id: "depon", productName: "Depon" }],
+      {},
+    ),
+    "zircos",
+  );
   const main = readFileSync("src/main.js", "utf8");
-  assert.match(main, /scannedDrugs\.push\(drug\)/);
-  assert.equal(/scannedDrugs\.unshift\(/.test(main), false);
+  assert.match(main, /scannedDrugs\.unshift\(drug\)/);
+  assert.equal(/scannedDrugs\.push\(drug\)/.test(main), false);
+  assert.match(main, /expandedDrugId = drug\.id/);
   assert.match(main, /is-latest/);
+  assert.match(main, /className = "drug-collapsed"/);
+  assert.match(main, /new ResizeObserver/);
+});
+
+test("the window grows downward and stays inside the work area", () => {
+  const workArea = { x: 0, y: 0, width: 1440, height: 800 };
+  const nearTop = clampWindowToWorkArea({
+    x: 800, y: 8, width: 648, height: 900, workArea, minHeight: 288,
+  });
+  assert.equal(nearTop.y, 8);
+  assert.equal(nearTop.height, 792);
+  assert.equal(nearTop.x, 792);
+
+  const nearBottom = clampWindowToWorkArea({
+    x: 900, y: 620, width: 648, height: 500, workArea, minHeight: 288,
+  });
+  assert.equal(nearBottom.y, 512);
+  assert.equal(nearBottom.height, 288);
+  assert.ok(nearBottom.y >= workArea.y);
+  assert.ok(nearBottom.y + nearBottom.height <= workArea.y + workArea.height);
+
+  const above = clampWindowToWorkArea({
+    x: -20, y: -40, width: 250, height: 288, workArea, minHeight: 288,
+  });
+  assert.equal(above.y, 0);
+  assert.equal(above.x, 0);
+  assert.equal(above.height, 288);
+
+  assert.equal(PANEL_MAX_INSET, 16);
+  assert.equal(panelMaxHeight(700), 684);
+  assert.equal(panelMaxHeight(10), 0);
+  const main = readFileSync("src/main.js", "utf8");
+  const css = readFileSync("src/style.css", "utf8");
+  assert.match(main, /clampWindowToWorkArea\(/);
+  assert.match(css, /\.app-root\s*\{[^}]*justify-content:\s*flex-start;/s);
+  assert.match(css, /max-height:\s*calc\(100vh - 16px\)/);
+  assert.match(css, /\.drug-collapsed\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(css, /\.recommendation-text\s*\{[^}]*height:\s*calc\(1\.4em \* 2\);/s);
 });
 
 test("a typed name with no match shows the empty sentence and does not reuse the last barcode", () => {
