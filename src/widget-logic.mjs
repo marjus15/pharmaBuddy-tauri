@@ -313,10 +313,25 @@ const SYMPTOM_STEMS = [
   "κοπωσ",
   "εξασθεν",
   "ραβδομυ",
+  "καταθλιψ",
+  "αταξ",
+  "καταστολ",
+  "διαβητ",
+  "μυοπαθ",
+  "νευροπαθ",
+  "υπογλυκ",
+  "υπεργλυκ",
+  "ακοκκιο",
+  "υπερευαισθησ",
 ];
 
 const FREQUENCY_LABELS = [
   ["μη γνωστής συχνότητας", 6],
+  ["πολύ συνήθεις", 0],
+  ["πολύ συνήθης", 0],
+  ["όχι συνήθεις", 3],
+  ["όχι συνήθης", 3],
+  ["μη γνωστής", 6],
   ["πολύ σπάνιες", 5],
   ["πολύ συχνές", 0],
   ["πολύ σπάνια", 5],
@@ -327,6 +342,8 @@ const FREQUENCY_LABELS = [
   ["πολύ συχνά", 0],
   ["όχι συχνή", 3],
   ["όχι συχνά", 3],
+  ["συνήθεις", 1],
+  ["συνήθης", 1],
   ["σπάνιες", 4],
   ["συχνές", 1],
   ["συχνός", 1],
@@ -556,10 +573,28 @@ function splitTopLevel(text) {
   return parts;
 }
 
+function splitCapitalizedEffects(piece) {
+  const words = String(piece || "").split(/\s+/).filter(Boolean);
+  const groups = [];
+  for (const word of words) {
+    const startsUpper = /^\p{Lu}/u.test(word);
+    if (startsUpper && groups.length && groups[groups.length - 1].length) {
+      groups.push([word]);
+    } else if (groups.length) {
+      groups[groups.length - 1].push(word);
+    } else {
+      groups.push([word]);
+    }
+  }
+  return groups.map((group) => group.join(" ")).filter(Boolean);
+}
+
 function splitPieces(sentence) {
   const pieces = [];
   for (const chunk of splitTopLevel(listBody(sentence))) {
-    pieces.push(...splitConjunctions(chunk));
+    for (const part of splitConjunctions(chunk)) {
+      pieces.push(...splitCapitalizedEffects(part));
+    }
   }
   return pieces.map((piece) => piece.trim()).filter(Boolean);
 }
@@ -608,6 +643,11 @@ function cleanItem(raw) {
   text = text.replace(/\s+/g, " ").trim();
   text = text.replace(/\s+σε\s+(?:μικρό|μεγάλο)\s+ποσοστό(?:\s+ασθεν\p{L}*)?$/iu, "");
   text = text.replace(/^(?:η|ο|το|οι|τα)\s+/iu, "");
+  text = text.replace(
+    /^(?:έχει\s+παρατηρηθεί|έχουν\s+αναφερθεί|αναφέρεται|παρατηρείται|εμφανίζονται|παρατηρούνται|αναφέρονται)\s+/iu,
+    "",
+  );
+  text = text.replace(/[\d*†]+$/u, "").trim();
   text = text.replace(/^(?:του|της|των|στο|στη|στην|στον|στα|στις|στους|σε|με|από|για)\b.*$/iu, "");
   text = text.replace(/[.]+$/g, "").trim();
   text = text.replace(/\s+/g, " ").trim();
@@ -618,7 +658,6 @@ function cleanItem(raw) {
     return "";
   }
   text = shortenToChip(text);
-  if (!text) return "";
   let previous = "";
   while (text !== previous) {
     previous = text;
@@ -628,16 +667,40 @@ function cleanItem(raw) {
     );
   }
   text = text.replace(/\s+/g, " ").trim();
-  if (!text || isCutOffFragment(text) || isSocHeader(text) || isFrequencyOnly(text) || isTableFragment(text)) {
-    return "";
-  }
   const words = text.split(/\s+/).filter(Boolean);
-  if (words.length > CHIP_MAX_WORDS) return "";
-  if (words.some((word) => word.length < 3)) return "";
-  if (text.length < 3 || !/[Α-Ωα-ωΆ-ώΪΫϊϋΐΰ]/u.test(text)) return "";
-  text = symptomChip(text);
-  if (!text) return "";
-  return capitalizeGreek(text);
+  const directOk = text
+    && !isCutOffFragment(text)
+    && !isSocHeader(text)
+    && !isFrequencyOnly(text)
+    && !isTableFragment(text)
+    && words.length > 0
+    && words.length <= CHIP_MAX_WORDS
+    && words.every((word) => word.length >= 3)
+    && /[Α-Ωα-ωΆ-ώΪΫϊϋΐΰ]/u.test(text);
+  const direct = directOk ? symptomChip(text) : "";
+  if (direct) return capitalizeGreek(direct);
+  const recovered = recoverEffectPhrase(raw);
+  if (!recovered) return "";
+  return capitalizeGreek(recovered);
+}
+
+/** When the words before a preposition are not an effect, keep a later effect name. */
+function recoverEffectPhrase(raw) {
+  let text = String(raw || "");
+  text = text.replace(/\([^)]*\)/g, " ");
+  text = text.replace(/\d+(?:[.,]\d+)?\s*%/g, " ");
+  text = text.replace(/[≥≤][^,.;]*/g, " ");
+  text = text.replace(/[\d*†]+$/u, "");
+  text = text.replace(/\s+/g, " ").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  for (let size = Math.min(3, words.length); size >= 1; size -= 1) {
+    for (let index = 0; index + size <= words.length; index += 1) {
+      const phrase = words.slice(index, index + size).join(" ");
+      const chip = symptomChip(phrase);
+      if (chip) return chip;
+    }
+  }
+  return "";
 }
 
 function foldedWord(word) {
@@ -647,17 +710,55 @@ function foldedWord(word) {
 /** Drop connector words, then keep the phrase only when a real effect stem remains. */
 function symptomChip(text) {
   const kept = String(text || "")
+    .replace(/[.]+$/g, "")
     .split(/\s+/)
     .filter((word) => {
       const folded = foldedWord(word);
       return folded && !FILLER_WORDS.has(folded);
     });
-  const phrase = kept.join(" ").trim();
+  let phrase = kept.join(" ").trim();
+  let previous = "";
+  while (phrase && phrase !== previous) {
+    previous = phrase;
+    phrase = phrase
+      .replace(/^(?:του|της|των|στο|στη|στην|στον|στα|στις|στους|σε|με|από|για|και|ή|να)\s+/iu, "")
+      .replace(
+        /\s+(?:πιθανώς|πιθανόν|να|συμπεριλαμβανομένου|συμπεριλαμβανομένης|συμπεριλαμβανομένων)$/iu,
+        "",
+      )
+      .trim();
+  }
   if (!phrase) return "";
   const folded = foldFacts(phrase);
-  if (!SYMPTOM_STEMS.some((stem) => folded.includes(stem))) return "";
+  const stems = matchingStems(folded);
+  if (stems.length === 0) return "";
+  if (stems.length === 1 && stems[0] === "γαστρ") return "";
+  if (/^γαστρεντερικ\p{L}*$/iu.test(phrase)) return "";
+  if (
+    /(?:^|\s)(?:είναι|εμφανισ\p{L}*|πιθανώς|πιθανόν|μπορεί|πρέπει|συνιστάται|έχει|έχουν|γίνει|συμβεί|προκαλέσει|εξαρτάται|φύσης)(?:\s|$)/iu.test(
+      phrase,
+    )
+  ) {
+    return "";
+  }
   return phrase;
 }
+
+function matchingStems(folded) {
+  const words = String(folded || "")
+    .split(/\s+/)
+    .map((word) => word.replace(/[^\p{L}]/gu, ""))
+    .filter(Boolean);
+  return SYMPTOM_STEMS.filter((stem) =>
+    words.some((word) => {
+      if (stem === "αλγ") {
+        return word.startsWith("αλγ") || /αλγ(?:ος|ια|ιες|ους|ων)$/u.test(word);
+      }
+      return word.includes(stem);
+    }),
+  );
+}
+
 
 /** Keep a short effect name. Longer phrases survive only as the words before a preposition. */
 function shortenToChip(text) {
@@ -800,7 +901,7 @@ export function sideEffectBullets(raw) {
   const seen = new Set();
   const bullets = [];
   for (const item of ranked) {
-    const key = lowerEl(item.text);
+    const key = foldFacts(item.text);
     if (seen.has(key)) continue;
     seen.add(key);
     bullets.push(item.text);
@@ -808,6 +909,24 @@ export function sideEffectBullets(raw) {
   if (bullets.length > 0) return bullets;
   const fallback = fallbackBullet(text);
   return fallback ? [fallback] : [];
+}
+
+/**
+ * Galinos stores about 200 characters and ends the cut with «...».
+ * That teaser is not the effect list, even when a few names happen to sit in it.
+ */
+export function isTruncatedSideEffectTeaser(raw) {
+  const text = String(raw ?? "").replace(/\s+/g, " ").trim();
+  if (!text || [...text].length > 240) return false;
+  return /(?:\.{3}|…)\s*$/u.test(text);
+}
+
+/** True when the stored excerpt should not be the final card text. */
+export function excerptNeedsRicherSource(raw) {
+  const text = String(raw ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return true;
+  if (isTruncatedSideEffectTeaser(text)) return true;
+  return sideEffectBullets(text).length === 0;
 }
 
 export const RECOMMENDATION_MORE_LABEL = "+ περισσότερα";

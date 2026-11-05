@@ -410,7 +410,7 @@ Deno.serve(async (req) => {
         const meta = (globalItem.metadata ?? {}) as Record<string, string>
         activeIngredient = meta.active_ingredient || "Δεν αναφέρεται"
         atcCode = meta.atc_code || "Δεν αναφέρεται"
-        sideEffects = cleanFact(meta.side_effects)
+        sideEffects = cleanFact(meta.side_effects, 4000)
         aiContext = `Type: ${globalItem.product_type}. Active Ingredient: ${activeIngredient}. ATC Code: ${atcCode}.`
         console.log("[get-ai-recommendation] catalog_hit", JSON.stringify({ barcode, product_name: productName }))
       } else if (clientProductName) {
@@ -437,9 +437,10 @@ Deno.serve(async (req) => {
 
     activeIngredient = preferFact(activeIngredient, clientActiveIngredient)
     atcCode = preferFact(atcCode, clientAtcCode, 16)
-    if (!sideEffects) sideEffects = cleanFact(clientSideEffects)
-    if (sideEffects) {
-      aiContext = `${aiContext} Side effects excerpt: ${sideEffects}`
+    if (!sideEffects) sideEffects = cleanFact(clientSideEffects, 4000)
+    const sideEffectsForModel = sideEffects.slice(0, 500)
+    if (sideEffectsForModel) {
+      aiContext = `${aiContext} Side effects excerpt: ${sideEffectsForModel}`
     }
 
     span.attrs["pharmabuddy.product_name"] = productName
@@ -584,7 +585,7 @@ Deno.serve(async (req) => {
     - Επίστρεψε ΜΟΝΟ το λεκτικό της πρότασης στα Ελληνικά, τίποτα άλλο.`;
 
     const variationKey = crypto.randomUUID()
-    const sideEffectsLine = sideEffects || "Δεν αναφέρονται"
+    const sideEffectsLine = sideEffectsForModel || "Δεν αναφέρονται"
 
     const prompt = `Στοιχεία σκαναρισμένου φαρμάκου:
     Όνομα Προϊόντος: ${productName}

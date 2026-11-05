@@ -1,5 +1,6 @@
 use crate::catalog_cache;
 use crate::env_config::{self, AppProfile};
+use crate::farmako_spc;
 use crate::galinos;
 use serde::Serialize;
 
@@ -94,6 +95,12 @@ async fn prod_side_effects(
     product_name: Option<&str>,
     name_only: bool,
 ) -> SideEffectsDto {
+    if !name_only {
+        if let Some(excerpt) = farmako_spc::lookup_excerpt(barcode, product_name).await {
+            return publish_excerpt(barcode, product_name, excerpt, None, None);
+        }
+    }
+
     let Some(lookup) = galinos::lookup_side_effects(barcode, product_name, name_only).await else {
         env_config::app_log(&format!("[SideEffects] no SPC excerpt for {barcode}"));
         return empty_side_effects();
@@ -141,6 +148,44 @@ async fn prod_side_effects(
         active_ingredient: hit.active_ingredient,
         atc_code: hit.atc_code,
         side_effects: Some(hit.side_effects),
+    }
+}
+
+fn publish_excerpt(
+    barcode: &str,
+    product_name: Option<&str>,
+    side_effects: String,
+    active_ingredient: Option<String>,
+    atc_code: Option<String>,
+) -> SideEffectsDto {
+    let page_name = product_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string);
+    if let Some(name) = page_name.clone() {
+        if let Some(stored) = side_effect_catalog_target(
+            barcode,
+            true,
+            Some(&name),
+            catalog_cache::get_session_cached(barcode).as_deref(),
+        ) {
+            catalog_cache::schedule_catalog_facts(
+                barcode.to_string(),
+                stored,
+                "smpc",
+                active_ingredient.clone(),
+                atc_code.clone(),
+                Some(side_effects.clone()),
+            );
+        }
+    }
+
+    SideEffectsDto {
+        found: true,
+        product_name: page_name,
+        active_ingredient,
+        atc_code,
+        side_effects: Some(side_effects),
     }
 }
 
