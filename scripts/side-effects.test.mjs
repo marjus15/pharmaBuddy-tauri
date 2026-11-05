@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  CUSTOMER_IDLE_MS,
   MANUAL_ENTRY_BARCODE,
   MANUAL_NAME_NOT_FOUND_MESSAGE,
   RECOMMENDATION_MORE_LABEL,
@@ -267,7 +266,8 @@ test("pharmacist UI has no source line and uses the approved card", () => {
   assert.match(main, /SIDE_EFFECTS_FALLBACK/);
   assert.match(main, /basketSuggestionKind\(/);
   assert.match(main, /chooseExpandedId\(/);
-  assert.match(main, /CUSTOMER_IDLE_MS/);
+  assert.equal(main.includes("CUSTOMER_IDLE_MS"), false);
+  assert.equal(main.includes("customerIdleTimer"), false);
   assert.match(main, /\+ Νέος πελάτης/);
   assert.equal((main.match(/invoke\(\s*"get_recommendation"/g) || []).length, 1);
   assert.match(readFileSync("src/index.html", "utf8"), /<html lang="el">/);
@@ -287,6 +287,11 @@ test("pharmacist UI has no source line and uses the approved card", () => {
   assert.match(css, /html,\s*body\s*\{[^}]*background:\s*transparent;/s);
   assert.equal(/\.recommendation-text\s*\{[^}]*-webkit-line-clamp/.test(css), false);
   assert.equal(/\.drug-side-effects[^}]*overflow-y:\s*auto/s.test(css), false);
+  assert.match(css, /\.side-effect-chips\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(css, /\.side-effect-chips\s*\{[^}]*max-height:\s*max\(72px, min\(220px, calc\(100vh - 280px\)\)\);/s);
+  assert.match(css, /\.side-effects-label\s*\{[^}]*flex-shrink:\s*0;/s);
+  assert.match(css, /\.drug-card-hd\s*\{[^}]*flex-shrink:\s*0;/s);
+  assert.match(css, /\.drug-card-ft\s*\{[^}]*flex-shrink:\s*0;/s);
 });
 
 test("recommendation stays within two lines and ends on a whole word", () => {
@@ -561,7 +566,7 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
   assert.equal(basketExpandedId(pair, null), "panadol");
   assert.equal(basketExpandedId(pair, "lipitor"), "lipitor");
   assert.equal(basketCountLabel(3), "3 προϊόντα");
-  assert.equal(CUSTOMER_IDLE_MS, 120000);
+  assert.equal(readFileSync("src/main.js", "utf8").includes("setTimeout(() => {\n    customerIdleTimer"), false);
   assert.equal(
     cardMetaLine({ formLabel: "Επικαλ. δισκία", clock: "15:06", count: 1 }),
     "Επικαλ. δισκία · 15:06",

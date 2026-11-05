@@ -112,9 +112,6 @@ export function reduceUpdateUi(state, event) {
 /** Footer on the product card. Must not name a data source. */
 export const SIDE_EFFECTS_TRUST_LINE = "ⓘ Τελική απόφαση: φαρμακοποιός";
 
-/** No scan and no basket interaction for this long starts a new customer. */
-export const CUSTOMER_IDLE_MS = 2 * 60 * 1000;
-
 /** Shown when an excerpt exists but no real side-effect names can be read from it. */
 export const SIDE_EFFECTS_FALLBACK = "Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.";
 

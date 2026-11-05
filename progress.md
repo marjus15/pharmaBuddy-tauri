@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-11-05 — Chip list scrolls, and the basket stays until the pharmacist clears it
+
+- A long side-effect list no longer grows the open card off the screen. Only the chips under «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» scroll, and that area has a max height. The product title and «ⓘ Τελική απόφαση: φαρμακοποιός» stay on the card. The label stays above the chips.
+- The panel still grows downward from the orb. When several products are open, the collapsed rows are still the part that scrolls. The orb is not clipped.
+- The two-minute idle timer no longer clears the basket. Scanned products stay until «+ Νέος πελάτης» or the close control.
+
 ## 2026-11-05 — Side-effect chips from the full SmPC list
 
 - The eight reported barcodes already store a Galinos excerpt of about 200 characters that ends in «...». The card treated that string as finished. The chip parser drops the safety-profile heading and the frequency legend, so ZIRCOS, ASPIRIN, XANAX, PANADOL, NUROFEN, and LIPITOR had no chips and showed «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.» AUGMENTIN's teaser names διάρροια, ναυτία, and έμετος. DEPON's teaser names the rash only after «με».

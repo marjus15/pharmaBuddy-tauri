@@ -1,5 +1,4 @@
 import {
-  CUSTOMER_IDLE_MS,
   FORGOT_PASSWORD_MESSAGE,
   INACTIVE_PHARMACY_MESSAGE,
   LOGIN_CONFIG_MESSAGE,
@@ -31,7 +30,6 @@ import {
   sideEffectBullets,
   sideEffectCountLabel,
   visibleRecommendation,
-  visibleSideEffects,
 } from "./widget-logic.mjs";
 
 const tauri = window.__TAURI__;
@@ -130,7 +128,6 @@ let scannedDrugs = [];
 let activeDrugId = null;
 let expandedDrugId = null;
 let userPinnedExpansion = false;
-let customerIdleTimer = null;
 let sidebarOpen = false;
 let processing = false;
 let lookupInFlight = false;
@@ -724,7 +721,7 @@ function renderPreview(params) {
     return;
   }
 
-  if (state === "spc-zircos" || state === "spc-augmentin" || state === "spc-aspirin") {
+  if (state === "spc-zircos" || state === "spc-augmentin" || state === "spc-aspirin" || state === "spc-nurofen" || state === "spc-few") {
     const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
     const cards = {
       "spc-zircos": {
@@ -757,6 +754,25 @@ function renderPreview(params) {
         sideEffects:
           "Συχνές: Ζάλη, Δυσπεψία, Γαστρεντερικό και κοιλιακό άλγος, Γαστρεντερική αιμορραγία, Εξάνθημα, Κνησμός.",
       },
+      "spc-nurofen": {
+        id: "spc-nurofen",
+        barcode: "2802075013033",
+        productName: "NUROFEN EXPRESS C.TAB",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Ibuprofen",
+        atcCode: "M01AE01",
+        sideEffects:
+          "Συχνές: γαστρεντερική αιμορραγία, ναυτία, έμετος, διάρροια, δυσκοιλιότητα, δυσπεψία, κοιλιακό άλγος, ελκώδης στοματίτιδα, οίδημα, υπέρταση. Όχι συχνές: κνησμός, κνίδωση, ζάλη, αϋπνία, κόπωση, ταχυκαρδία, υπόταση, βρογχόσπασμος, δύσπνοια. Σπάνιες: παγκρεατίτιδα, ηπατίτιδα, εξάνθημα, κεφαλαλγία, θρομβοπενία, ακοκκιοκυτταραιμία, αναφυλαξία, λευκοπενία, κατάθλιψη.",
+      },
+      "spc-few": {
+        id: "spc-few",
+        barcode: "2801891515011",
+        productName: "PANADOL ACTIFAST F.C.TAB",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Paracetamol",
+        atcCode: "N02BE01",
+        sideEffects: "Συχνές: ναυτία, κεφαλαλγία και ζάλη.",
+      },
     };
     const card = cards[state];
     showPreviewDrugs([
@@ -770,6 +786,12 @@ function renderPreview(params) {
         status: "idle",
       },
     ]);
+    if (params.get("scroll") === "end") {
+      setTimeout(() => {
+        const scroller = document.querySelector(".drug-item.is-expanded .side-effect-chips");
+        if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      }, 50);
+    }
     return;
   }
 
@@ -1756,24 +1778,7 @@ async function openSidebar() {
   await resizeWindow("sidebar");
 }
 
-function clearCustomerIdle() {
-  if (customerIdleTimer) {
-    clearTimeout(customerIdleTimer);
-    customerIdleTimer = null;
-  }
-}
-
-function touchCustomerActivity() {
-  clearCustomerIdle();
-  if (scannedDrugs.length === 0 && !sidebarOpen) return;
-  customerIdleTimer = setTimeout(() => {
-    customerIdleTimer = null;
-    void startNewCustomer();
-  }, CUSTOMER_IDLE_MS);
-}
-
 async function collapseSidebar() {
-  clearCustomerIdle();
   drugSidebar.classList.remove("visible", "has-cards");
   drugSidebar.classList.add("hidden");
   sidebarOpen = false;
@@ -1927,7 +1932,6 @@ function createCollapsedDrug(drug) {
   row.append(name, tags, chevron);
   row.addEventListener("click", (event) => {
     event.stopPropagation();
-    touchCustomerActivity();
     void requestRecommendation(drug.id);
   });
 
@@ -1945,18 +1949,6 @@ function fillSideEffects(effectsBlock, drug) {
 
   const chips = document.createElement("div");
   chips.className = "side-effect-chips is-hidden";
-
-  const moreBtn = document.createElement("button");
-  moreBtn.type = "button";
-  moreBtn.className = "side-effects-more is-hidden";
-  moreBtn.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const current = findDrugById(drug.id);
-    if (!current) return;
-    current.sideEffectsExpanded = true;
-    renderDrugList();
-    void resizeWindow("sidebar");
-  });
 
   const missing = drug.manualEntry && drug.sideEffectsStatus === "empty" && !drug.sideEffects;
   if (missing) {
@@ -1978,11 +1970,11 @@ function fillSideEffects(effectsBlock, drug) {
     return;
   }
 
-  const view = visibleSideEffects(drug.sideEffects, Boolean(drug.sideEffectsExpanded));
-  if (view.bullets.length) {
+  const bullets = sideEffectBullets(drug.sideEffects);
+  if (bullets.length) {
     chips.classList.remove("is-hidden");
     chips.replaceChildren(
-      ...view.bullets.map((text) => {
+      ...bullets.map((text) => {
         const chip = document.createElement("span");
         chip.className = "side-effect-chip";
         chip.textContent = text;
@@ -1990,11 +1982,6 @@ function fillSideEffects(effectsBlock, drug) {
       }),
     );
     effectsBlock.append(chips);
-    if (view.hiddenCount > 0) {
-      moreBtn.textContent = view.moreLabel;
-      moreBtn.classList.remove("is-hidden");
-      effectsBlock.append(moreBtn);
-    }
     return;
   }
 
@@ -2085,7 +2072,6 @@ function createExpandedDrug(drug) {
   btn.classList.toggle("loading", drug.status === "loading");
   btn.addEventListener("click", (event) => {
     event.stopPropagation();
-    touchCustomerActivity();
     void requestRecommendation(drug.id);
   });
 
@@ -2104,7 +2090,6 @@ function createExpandedDrug(drug) {
   toggle.setAttribute("aria-label", single ? "Κλείσιμο" : "Σύμπτυξη");
   toggle.addEventListener("click", (event) => {
     event.stopPropagation();
-    touchCustomerActivity();
     if (single) {
       void startNewCustomer();
       return;
@@ -2206,7 +2191,6 @@ function appendDrug(drug) {
   userPinnedExpansion = false;
   expandedDrugId = drug.id;
   renderDrugList();
-  touchCustomerActivity();
   const el = drugList.querySelector(`[data-drug-id="${drug.id}"]`);
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
@@ -2244,7 +2228,6 @@ async function handleLookupResult(lookupResult, barcode) {
     setOrbState("success");
     triggerFlash();
     setTimeout(() => setOrbState("idle"), 400);
-    touchCustomerActivity();
     if (!sidebarOpen) await openSidebar();
     else await resizeWindow("sidebar");
     return;
@@ -2264,7 +2247,6 @@ async function handleLookupResult(lookupResult, barcode) {
 
   if (!sidebarOpen) await openSidebar();
   showManualEntryRow(barcode, lookupResult.miss_reason || "");
-  touchCustomerActivity();
   await resizeWindow("sidebar");
   setOrbState("idle");
 }
@@ -2323,7 +2305,6 @@ async function openManualEntry() {
   }
 
   showManualEntryRow(MANUAL_ENTRY_BARCODE, "");
-  touchCustomerActivity();
   await resizeWindow("sidebar");
 }
 
@@ -2406,7 +2387,6 @@ async function requestRecommendation(drugId) {
   expandedDrugId = drugId;
   userPinnedExpansion = true;
   activeDrugId = drugId;
-  touchCustomerActivity();
 
   if (drug.status === "done" && drug.recommendation) {
     applyCachedDrugClick(drug);
@@ -2517,7 +2497,6 @@ async function processBarcode(rawBarcode) {
   const legacyReady = authMode === "legacy" && pharmacyActivated && pharmacyLicenseValid;
   if (!scansEnabled && !legacyReady) return;
   if (lookupInFlight) return;
-  touchCustomerActivity();
 
   updateOrbScanDisplay(rawBarcode, "pending");
 
@@ -2588,9 +2567,6 @@ function setupPanelControls() {
     e.stopPropagation();
     collapseSidebar();
   });
-
-  manualNameInput.addEventListener("input", () => touchCustomerActivity());
-  drugSidebar?.addEventListener("pointerdown", () => touchCustomerActivity());
 
   manualNameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {

@@ -194,7 +194,10 @@ body {
 }
 
 .drug-item.is-expanded {
-  flex-shrink: 0;
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .drug-collapsed {
@@ -243,6 +246,10 @@ body {
 }
 
 .drug-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
   background: #0e1216;
   border: 1px solid #1d2a31;
   border-left: 4px solid #22d3ee;
@@ -253,6 +260,7 @@ body {
 
 .drug-card-hd {
   display: flex;
+  flex-shrink: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
@@ -319,6 +327,7 @@ body {
 }
 
 .drug-suggestion {
+  flex-shrink: 0;
   margin: 12px 14px 0;
   padding: 10px 12px;
   background: #0f2a31;
@@ -356,10 +365,14 @@ body {
 }
 
 .drug-side-effects {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   width: 100%;
+  min-height: 0;
   margin: 0;
   padding: 12px 14px 4px;
-  overflow: visible;
+  overflow: hidden;
   background: transparent;
 }
 
@@ -377,6 +390,7 @@ body {
 }
 
 .side-effects-label {
+  flex-shrink: 0;
   margin: 0 0 8px;
   color: #9aaab2;
   font-size: 11px;
@@ -387,6 +401,7 @@ body {
 }
 
 .side-effects-text {
+  flex-shrink: 0;
   margin: 0;
   color: #e3eaee;
   font-size: 14px;
@@ -404,8 +419,25 @@ body {
 
 .side-effect-chips {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 6px;
+  min-height: 0;
+  max-height: max(72px, min(220px, calc(100vh - 280px)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #2a4550 transparent;
+  scrollbar-width: thin;
+}
+
+.side-effect-chips::-webkit-scrollbar {
+  width: 8px;
+}
+
+.side-effect-chips::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: #2a4550;
 }
 
 .side-effect-chip {
@@ -446,6 +478,7 @@ body {
 }
 
 .drug-card-ft {
+  flex-shrink: 0;
   margin: 0;
   padding: 10px 14px 12px;
   color: #62747c;
