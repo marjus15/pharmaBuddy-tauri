@@ -795,6 +795,45 @@ function renderPreview(params) {
     return;
   }
 
+  if (state === "scan-next") {
+    const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
+    const many =
+      "Συχνές: γαστρεντερική αιμορραγία, ναυτία, έμετος, διάρροια, δυσκοιλιότητα, δυσπεψία, κοιλιακό άλγος, ελκώδης στοματίτιδα, οίδημα, υπέρταση. Όχι συχνές: κνησμός, κνίδωση, ζάλη, αϋπνία, κόπωση, ταχυκαρδία, υπόταση, βρογχόσπασμος, δύσπνοια. Σπάνιες: παγκρεατίτιδα, ηπατίτιδα, εξάνθημα, κεφαλαλγία, θρομβοπενία, ακοκκιοκυτταραιμία, αναφυλαξία, λευκοπενία, κατάθλιψη.";
+    showPreviewDrugs([
+      {
+        id: "scan-zircos",
+        barcode: "2803151602011",
+        found: true,
+        productName: "ZIRCOS F.C.TAB 10MG",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Rosuvastatin",
+        atcCode: "C10AA07",
+        sideEffects: many,
+        sideEffectsStatus: "done",
+        scannedAt: at(12, 41),
+        recommendation: null,
+        errorMessage: null,
+        status: "done",
+      },
+      {
+        id: "scan-nurofen",
+        barcode: "2802075013033",
+        found: true,
+        productName: "NUROFEN EXPRESS C.TAB",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Ibuprofen",
+        atcCode: "M01AE01",
+        sideEffects: many,
+        sideEffectsStatus: "done",
+        scannedAt: at(12, 40),
+        recommendation: null,
+        errorMessage: null,
+        status: "done",
+      },
+    ]);
+    return;
+  }
+
   if (
     state === "card-effects" ||
     state === "card-fallback" ||
@@ -2187,9 +2226,13 @@ function renderDrugList() {
 
 function appendDrug(drug) {
   if (!drug.scannedAt) drug.scannedAt = new Date().toISOString();
+  const previousExpandedId = expandedDrugId;
   scannedDrugs.unshift(drug);
   userPinnedExpansion = false;
-  expandedDrugId = drug.id;
+  expandedDrugId = chooseExpandedId(scannedDrugs, {
+    addedId: drug.id,
+    previousExpandedId,
+  });
   renderDrugList();
   const el = drugList.querySelector(`[data-drug-id="${drug.id}"]`);
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });

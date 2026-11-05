@@ -22,6 +22,7 @@ import {
   excerptNeedsRicherSource,
   isTruncatedSideEffectTeaser,
   latestDrugId,
+  likelySuggestion,
   sideEffectBullets,
   sideEffectCountLabel,
   sideEffectsMoreLabel,
@@ -384,6 +385,20 @@ test("a typed name does not keep another medicine's barcode", () => {
   );
 });
 
+test("a new scan opens even when the previous card has a local suggestion", () => {
+  const previous = { id: "augmentin", atcCode: "J01CR02", productName: "AUGMENTIN F.C.TAB" };
+  const newest = { id: "nurofen", atcCode: "M01AE01", productName: "NUROFEN EXPRESS C.TAB" };
+  assert.equal(likelySuggestion(previous), true);
+  assert.equal(likelySuggestion(newest), false);
+  assert.equal(
+    chooseExpandedId([newest, previous], { addedId: "nurofen", previousExpandedId: "augmentin" }),
+    "nurofen",
+  );
+  assert.equal(latestDrugId([newest, previous]), "nurofen");
+  const main = readFileSync("src/main.js", "utf8");
+  assert.match(main, /addedId: drug\.id/);
+});
+
 test("the newest scan is inserted first and stays the latest card", () => {
   const drugs = [
     { id: "zircos", productName: "zircos" },
@@ -401,7 +416,7 @@ test("the newest scan is inserted first and stays the latest card", () => {
   const main = readFileSync("src/main.js", "utf8");
   assert.match(main, /scannedDrugs\.unshift\(drug\)/);
   assert.equal(/scannedDrugs\.push\(drug\)/.test(main), false);
-  assert.match(main, /expandedDrugId = drug\.id/);
+  assert.match(main, /addedId: drug\.id/);
   assert.match(main, /is-latest/);
   assert.match(main, /className = "drug-collapsed"/);
   assert.match(main, /new ResizeObserver/);
@@ -509,7 +524,7 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
   );
   assert.equal(
     chooseExpandedId(drugs, { addedId: "aspirin", previousExpandedId: "augmentin" }),
-    "augmentin",
+    "aspirin",
   );
   assert.equal(chooseExpandedId([drugs[0]]), "aspirin");
   assert.equal(sideEffectCountLabel(2), "2 παρενέργειες");

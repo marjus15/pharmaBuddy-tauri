@@ -1119,9 +1119,10 @@ export function likelySuggestion(drug) {
 }
 
 /**
- * One expanded card. A newly scanned product that matches a local rule takes
- * the slot. Otherwise a product that already matches stays open. With no
- * match, the newest product is shown. The newest scan is first in the list.
+ * One expanded card. A new scan always takes the slot, even when the card
+ * that was open matches a local suggestion rule. With no new scan, the card
+ * that is already open stays open. Otherwise the newest product is shown.
+ * The newest scan is first in the list.
  */
 export function chooseExpandedId(drugs, options = {}) {
   const list = Array.isArray(drugs) ? drugs.filter((drug) => drug && drug.id) : [];
@@ -1129,20 +1130,12 @@ export function chooseExpandedId(drugs, options = {}) {
   if (list.length === 1) return list[0].id;
 
   const addedId = options.addedId ?? null;
+  if (addedId && list.some((drug) => drug.id === addedId)) return addedId;
+
   const previousExpandedId = options.previousExpandedId ?? null;
-  const added = addedId ? list.find((drug) => drug.id === addedId) : null;
-  if (added && likelySuggestion(added)) return added.id;
-
-  const previous = previousExpandedId
-    ? list.find((drug) => drug.id === previousExpandedId)
-    : null;
-  if (previous && likelySuggestion(previous)) return previous.id;
-
-  const likely = list.find((drug) => likelySuggestion(drug));
-  if (likely) return likely.id;
-
-  if (added) return added.id;
-  if (previous) return previous.id;
+  if (previousExpandedId && list.some((drug) => drug.id === previousExpandedId)) {
+    return previousExpandedId;
+  }
   return list[0].id;
 }
 

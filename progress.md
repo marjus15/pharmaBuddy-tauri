@@ -5,6 +5,7 @@
 - A long side-effect list no longer grows the open card off the screen. Only the chips under «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» scroll, and that area has a max height. The product title and «ⓘ Τελική απόφαση: φαρμακοποιός» stay on the card. The label stays above the chips.
 - The panel still grows downward from the orb. When several products are open, the collapsed rows are still the part that scrolls. The orb is not clipped.
 - The two-minute idle timer no longer clears the basket. Scanned products stay until «+ Νέος πελάτης» or the close control.
+- A new barcode is inserted first and becomes the open card. The card that was open, including one with a local «💡» rule, collapses underneath.
 
 ## 2026-11-05 — Side-effect chips from the full SmPC list
 
