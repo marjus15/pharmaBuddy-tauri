@@ -14,6 +14,7 @@ import {
   basketExpandedId,
   basketSuggestionKind,
   cardMetaLine,
+  cardFacts,
   chooseExpandedId,
   clampWindowToWorkArea,
   panelMaxHeight,
@@ -23,6 +24,7 @@ import {
   isTruncatedSideEffectTeaser,
   latestDrugId,
   likelySuggestion,
+  openCardAfterScan,
   sideEffectBullets,
   sideEffectCountLabel,
   sideEffectsMoreLabel,
@@ -385,6 +387,38 @@ test("a typed name does not keep another medicine's barcode", () => {
   );
 });
 
+test("scanning zircos after nurofen keeps zircos chips on the open card", () => {
+  const nurofen = {
+    id: "nurofen",
+    barcode: "2802075013033",
+    productName: "NUROFEN EXPRESS C.TAB",
+    recommendation: "Μαζί με το Nurofen, ένα τοπικό τζελ για τον πόνο.",
+    sideEffects: "Συχνές: γαστρεντερική αιμορραγία, ναυτία, έμετος, διάρροια.",
+  };
+  const zircos = {
+    id: "zircos",
+    barcode: "2803151602011",
+    productName: "ZIRCOS F.C.TAB 10MG",
+    recommendation: null,
+    sideEffects:
+      "Συχνές: σακχαρώδης διαβήτης, κεφαλαλγία, ζάλη, δυσκοιλιότητα, ναυτία, μυαλγία.",
+  };
+  const open = openCardAfterScan([zircos, nurofen], "zircos", "nurofen");
+  const facts = cardFacts(open);
+  assert.equal(facts.id, "zircos");
+  assert.equal(facts.barcode, "2803151602011");
+  assert.equal(facts.productName, "ZIRCOS F.C.TAB 10MG");
+  assert.equal(facts.recommendation, null);
+  assert.equal(facts.chips.includes("Σακχαρώδης διαβήτης"), true);
+  assert.equal(facts.chips.includes("Μυαλγία"), true);
+  assert.equal(facts.chips.includes("Γαστρεντερική αιμορραγία"), false);
+  assert.equal(cardFacts(nurofen).chips.includes("Γαστρεντερική αιμορραγία"), true);
+  const main = readFileSync("src/main.js", "utf8");
+  assert.match(main, /cardFacts\(drug\)/);
+  assert.match(main, /openCardAfterScan\(scannedDrugs, drug\.id, previousExpandedId\)/);
+  assert.match(main, /drugList\.innerHTML = ""/);
+});
+
 test("a new scan opens even when the previous card has a local suggestion", () => {
   const previous = { id: "augmentin", atcCode: "J01CR02", productName: "AUGMENTIN F.C.TAB" };
   const newest = { id: "nurofen", atcCode: "M01AE01", productName: "NUROFEN EXPRESS C.TAB" };
@@ -396,7 +430,7 @@ test("a new scan opens even when the previous card has a local suggestion", () =
   );
   assert.equal(latestDrugId([newest, previous]), "nurofen");
   const main = readFileSync("src/main.js", "utf8");
-  assert.match(main, /addedId: drug\.id/);
+  assert.match(main, /openCardAfterScan\(scannedDrugs, drug\.id, previousExpandedId\)/);
 });
 
 test("the newest scan is inserted first and stays the latest card", () => {
@@ -416,7 +450,7 @@ test("the newest scan is inserted first and stays the latest card", () => {
   const main = readFileSync("src/main.js", "utf8");
   assert.match(main, /scannedDrugs\.unshift\(drug\)/);
   assert.equal(/scannedDrugs\.push\(drug\)/.test(main), false);
-  assert.match(main, /addedId: drug\.id/);
+  assert.match(main, /openCardAfterScan\(scannedDrugs, drug\.id, previousExpandedId\)/);
   assert.match(main, /is-latest/);
   assert.match(main, /className = "drug-collapsed"/);
   assert.match(main, /new ResizeObserver/);

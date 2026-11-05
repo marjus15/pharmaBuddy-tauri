@@ -6,6 +6,7 @@
 - The panel still grows downward from the orb. When several products are open, the collapsed rows are still the part that scrolls. The orb is not clipped.
 - The two-minute idle timer no longer clears the basket. Scanned products stay until «+ Νέος πελάτης» or the close control.
 - A new barcode is inserted first and becomes the open card. The card that was open, including one with a local «💡» rule, collapses underneath.
+- The open card’s title, suggestion, and chips are read from that drug only. The two-product preview had given ZIRCOS the NUROFEN excerpt, which made the screenshot look like a bleed.
 
 ## 2026-11-05 — Side-effect chips from the full SmPC list
 

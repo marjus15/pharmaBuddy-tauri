@@ -1139,6 +1139,23 @@ export function chooseExpandedId(drugs, options = {}) {
   return list[0].id;
 }
 
+/** The drug that should be open after `addedId` is scanned onto the front of the list. */
+export function openCardAfterScan(drugs, addedId, previousExpandedId) {
+  const openId = chooseExpandedId(drugs, { addedId, previousExpandedId });
+  return (Array.isArray(drugs) ? drugs : []).find((drug) => drug?.id === openId) || null;
+}
+
+/** Title, suggestion, and chips taken only from this drug. */
+export function cardFacts(drug) {
+  return {
+    id: drug?.id ?? null,
+    barcode: String(drug?.barcode ?? ""),
+    productName: String(drug?.productName || ""),
+    recommendation: drug?.recommendation == null ? null : String(drug.recommendation),
+    chips: sideEffectBullets(drug?.sideEffects),
+  };
+}
+
 export function sideEffectCountLabel(count) {
   const n = Number(count) || 0;
   if (n <= 0) return "";

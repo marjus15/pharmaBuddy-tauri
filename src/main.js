@@ -15,6 +15,7 @@ import {
   basketCountLabel,
   basketExpandedId,
   basketSuggestionKind,
+  cardFacts,
   cardMetaLine,
   chooseExpandedId,
   clampWindowToWorkArea,
@@ -22,6 +23,7 @@ import {
   dosageFormLabel,
   formatScanClock,
   latestDrugId,
+  openCardAfterScan,
   loginErrorOnStartup,
   loginFailureMessage,
   reduceUpdateUi,
@@ -797,8 +799,6 @@ function renderPreview(params) {
 
   if (state === "scan-next") {
     const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
-    const many =
-      "Συχνές: γαστρεντερική αιμορραγία, ναυτία, έμετος, διάρροια, δυσκοιλιότητα, δυσπεψία, κοιλιακό άλγος, ελκώδης στοματίτιδα, οίδημα, υπέρταση. Όχι συχνές: κνησμός, κνίδωση, ζάλη, αϋπνία, κόπωση, ταχυκαρδία, υπόταση, βρογχόσπασμος, δύσπνοια. Σπάνιες: παγκρεατίτιδα, ηπατίτιδα, εξάνθημα, κεφαλαλγία, θρομβοπενία, ακοκκιοκυτταραιμία, αναφυλαξία, λευκοπενία, κατάθλιψη.";
     showPreviewDrugs([
       {
         id: "scan-zircos",
@@ -808,7 +808,8 @@ function renderPreview(params) {
         formLabel: "Επικαλ. δισκία",
         activeIngredient: "Rosuvastatin",
         atcCode: "C10AA07",
-        sideEffects: many,
+        sideEffects:
+          "Συχνές: σακχαρώδης διαβήτης, κεφαλαλγία, ζάλη, δυσκοιλιότητα, ναυτία, κοιλιακό άλγος, μυαλγία, εξασθένιση. Όχι συχνές: κνησμός, εξάνθημα, κνίδωση. Σπάνιες: θρομβοπενία, παγκρεατίτιδα, ραβδομυόλυση. Πολύ σπάνιες: ηπατίτιδα, αρθραλγία. Μη γνωστής συχνότητας: κατάθλιψη, βήχας, δύσπνοια, διάρροια.",
         sideEffectsStatus: "done",
         scannedAt: at(12, 41),
         recommendation: null,
@@ -823,10 +824,11 @@ function renderPreview(params) {
         formLabel: "Επικαλ. δισκία",
         activeIngredient: "Ibuprofen",
         atcCode: "M01AE01",
-        sideEffects: many,
+        sideEffects:
+          "Συχνές: γαστρεντερική αιμορραγία, ναυτία, έμετος, διάρροια, δυσκοιλιότητα, δυσπεψία, κοιλιακό άλγος.",
         sideEffectsStatus: "done",
         scannedAt: at(12, 40),
-        recommendation: null,
+        recommendation: "Μαζί με το Nurofen, ένα τοπικό τζελ για τον πόνο.",
         errorMessage: null,
         status: "done",
       },
@@ -2009,7 +2011,7 @@ function fillSideEffects(effectsBlock, drug) {
     return;
   }
 
-  const bullets = sideEffectBullets(drug.sideEffects);
+  const bullets = cardFacts(drug).chips;
   if (bullets.length) {
     chips.classList.remove("is-hidden");
     chips.replaceChildren(
@@ -2070,7 +2072,7 @@ function fillSuggestion(recBlock, drug) {
     recBlock.classList.add("is-error");
     recText.textContent = drug.errorMessage;
   } else {
-    const recommendation = visibleRecommendation(drug.recommendation, {
+    const recommendation = visibleRecommendation(cardFacts(drug).recommendation, {
       expanded: Boolean(drug.recommendationExpanded),
       fits: recommendationFitsTwoLines,
     });
@@ -2104,8 +2106,9 @@ function createExpandedDrug(drug) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "drug-name-btn";
-  btn.textContent = cardTitle(drug.productName || drug.barcode);
-  btn.title = drug.productName || drug.barcode;
+  const facts = cardFacts(drug);
+  btn.textContent = cardTitle(facts.productName || facts.barcode);
+  btn.title = facts.productName || facts.barcode;
   btn.disabled = processing && drug.status === "loading";
   btn.classList.toggle("active", drug.id === activeDrugId);
   btn.classList.toggle("loading", drug.status === "loading");
@@ -2229,10 +2232,7 @@ function appendDrug(drug) {
   const previousExpandedId = expandedDrugId;
   scannedDrugs.unshift(drug);
   userPinnedExpansion = false;
-  expandedDrugId = chooseExpandedId(scannedDrugs, {
-    addedId: drug.id,
-    previousExpandedId,
-  });
+  expandedDrugId = openCardAfterScan(scannedDrugs, drug.id, previousExpandedId)?.id || drug.id;
   renderDrugList();
   const el = drugList.querySelector(`[data-drug-id="${drug.id}"]`);
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
