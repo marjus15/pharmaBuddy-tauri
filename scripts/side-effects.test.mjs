@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  CUSTOMER_IDLE_MS,
   MANUAL_ENTRY_BARCODE,
   MANUAL_NAME_NOT_FOUND_MESSAGE,
   RECOMMENDATION_MORE_LABEL,
@@ -15,6 +14,7 @@ import {
   basketExpandedId,
   basketSuggestionKind,
   cardMetaLine,
+  cardFacts,
   chooseExpandedId,
   clampWindowToWorkArea,
   panelMaxHeight,
@@ -23,6 +23,8 @@ import {
   excerptNeedsRicherSource,
   isTruncatedSideEffectTeaser,
   latestDrugId,
+  likelySuggestion,
+  openCardAfterScan,
   sideEffectBullets,
   sideEffectCountLabel,
   sideEffectsMoreLabel,
@@ -267,7 +269,8 @@ test("pharmacist UI has no source line and uses the approved card", () => {
   assert.match(main, /SIDE_EFFECTS_FALLBACK/);
   assert.match(main, /basketSuggestionKind\(/);
   assert.match(main, /chooseExpandedId\(/);
-  assert.match(main, /CUSTOMER_IDLE_MS/);
+  assert.equal(main.includes("CUSTOMER_IDLE_MS"), false);
+  assert.equal(main.includes("customerIdleTimer"), false);
   assert.match(main, /\+ Νέος πελάτης/);
   assert.equal((main.match(/invoke\(\s*"get_recommendation"/g) || []).length, 1);
   assert.match(readFileSync("src/index.html", "utf8"), /<html lang="el">/);
@@ -287,6 +290,11 @@ test("pharmacist UI has no source line and uses the approved card", () => {
   assert.match(css, /html,\s*body\s*\{[^}]*background:\s*transparent;/s);
   assert.equal(/\.recommendation-text\s*\{[^}]*-webkit-line-clamp/.test(css), false);
   assert.equal(/\.drug-side-effects[^}]*overflow-y:\s*auto/s.test(css), false);
+  assert.match(css, /\.side-effect-chips\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(css, /\.side-effect-chips\s*\{[^}]*max-height:\s*max\(72px, min\(220px, calc\(100vh - 280px\)\)\);/s);
+  assert.match(css, /\.side-effects-label\s*\{[^}]*flex-shrink:\s*0;/s);
+  assert.match(css, /\.drug-card-hd\s*\{[^}]*flex-shrink:\s*0;/s);
+  assert.match(css, /\.drug-card-ft\s*\{[^}]*flex-shrink:\s*0;/s);
 });
 
 test("recommendation stays within two lines and ends on a whole word", () => {
@@ -379,6 +387,52 @@ test("a typed name does not keep another medicine's barcode", () => {
   );
 });
 
+test("scanning zircos after nurofen keeps zircos chips on the open card", () => {
+  const nurofen = {
+    id: "nurofen",
+    barcode: "2802075013033",
+    productName: "NUROFEN EXPRESS C.TAB",
+    recommendation: "Μαζί με το Nurofen, ένα τοπικό τζελ για τον πόνο.",
+    sideEffects: "Συχνές: γαστρεντερική αιμορραγία, ναυτία, έμετος, διάρροια.",
+  };
+  const zircos = {
+    id: "zircos",
+    barcode: "2803151602011",
+    productName: "ZIRCOS F.C.TAB 10MG",
+    recommendation: null,
+    sideEffects:
+      "Συχνές: σακχαρώδης διαβήτης, κεφαλαλγία, ζάλη, δυσκοιλιότητα, ναυτία, μυαλγία.",
+  };
+  const open = openCardAfterScan([zircos, nurofen], "zircos", "nurofen");
+  const facts = cardFacts(open);
+  assert.equal(facts.id, "zircos");
+  assert.equal(facts.barcode, "2803151602011");
+  assert.equal(facts.productName, "ZIRCOS F.C.TAB 10MG");
+  assert.equal(facts.recommendation, null);
+  assert.equal(facts.chips.includes("Σακχαρώδης διαβήτης"), true);
+  assert.equal(facts.chips.includes("Μυαλγία"), true);
+  assert.equal(facts.chips.includes("Γαστρεντερική αιμορραγία"), false);
+  assert.equal(cardFacts(nurofen).chips.includes("Γαστρεντερική αιμορραγία"), true);
+  const main = readFileSync("src/main.js", "utf8");
+  assert.match(main, /cardFacts\(drug\)/);
+  assert.match(main, /openCardAfterScan\(scannedDrugs, drug\.id, previousExpandedId\)/);
+  assert.match(main, /drugList\.innerHTML = ""/);
+});
+
+test("a new scan opens even when the previous card has a local suggestion", () => {
+  const previous = { id: "augmentin", atcCode: "J01CR02", productName: "AUGMENTIN F.C.TAB" };
+  const newest = { id: "nurofen", atcCode: "M01AE01", productName: "NUROFEN EXPRESS C.TAB" };
+  assert.equal(likelySuggestion(previous), true);
+  assert.equal(likelySuggestion(newest), false);
+  assert.equal(
+    chooseExpandedId([newest, previous], { addedId: "nurofen", previousExpandedId: "augmentin" }),
+    "nurofen",
+  );
+  assert.equal(latestDrugId([newest, previous]), "nurofen");
+  const main = readFileSync("src/main.js", "utf8");
+  assert.match(main, /openCardAfterScan\(scannedDrugs, drug\.id, previousExpandedId\)/);
+});
+
 test("the newest scan is inserted first and stays the latest card", () => {
   const drugs = [
     { id: "zircos", productName: "zircos" },
@@ -396,7 +450,7 @@ test("the newest scan is inserted first and stays the latest card", () => {
   const main = readFileSync("src/main.js", "utf8");
   assert.match(main, /scannedDrugs\.unshift\(drug\)/);
   assert.equal(/scannedDrugs\.push\(drug\)/.test(main), false);
-  assert.match(main, /expandedDrugId = drug\.id/);
+  assert.match(main, /openCardAfterScan\(scannedDrugs, drug\.id, previousExpandedId\)/);
   assert.match(main, /is-latest/);
   assert.match(main, /className = "drug-collapsed"/);
   assert.match(main, /new ResizeObserver/);
@@ -504,7 +558,7 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
   );
   assert.equal(
     chooseExpandedId(drugs, { addedId: "aspirin", previousExpandedId: "augmentin" }),
-    "augmentin",
+    "aspirin",
   );
   assert.equal(chooseExpandedId([drugs[0]]), "aspirin");
   assert.equal(sideEffectCountLabel(2), "2 παρενέργειες");
@@ -561,7 +615,7 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
   assert.equal(basketExpandedId(pair, null), "panadol");
   assert.equal(basketExpandedId(pair, "lipitor"), "lipitor");
   assert.equal(basketCountLabel(3), "3 προϊόντα");
-  assert.equal(CUSTOMER_IDLE_MS, 120000);
+  assert.equal(readFileSync("src/main.js", "utf8").includes("setTimeout(() => {\n    customerIdleTimer"), false);
   assert.equal(
     cardMetaLine({ formLabel: "Επικαλ. δισκία", clock: "15:06", count: 1 }),
     "Επικαλ. δισκία · 15:06",

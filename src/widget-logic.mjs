@@ -112,9 +112,6 @@ export function reduceUpdateUi(state, event) {
 /** Footer on the product card. Must not name a data source. */
 export const SIDE_EFFECTS_TRUST_LINE = "ⓘ Τελική απόφαση: φαρμακοποιός";
 
-/** No scan and no basket interaction for this long starts a new customer. */
-export const CUSTOMER_IDLE_MS = 2 * 60 * 1000;
-
 /** Shown when an excerpt exists but no real side-effect names can be read from it. */
 export const SIDE_EFFECTS_FALLBACK = "Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.";
 
@@ -1122,9 +1119,10 @@ export function likelySuggestion(drug) {
 }
 
 /**
- * One expanded card. A newly scanned product that matches a local rule takes
- * the slot. Otherwise a product that already matches stays open. With no
- * match, the newest product is shown. The newest scan is first in the list.
+ * One expanded card. A new scan always takes the slot, even when the card
+ * that was open matches a local suggestion rule. With no new scan, the card
+ * that is already open stays open. Otherwise the newest product is shown.
+ * The newest scan is first in the list.
  */
 export function chooseExpandedId(drugs, options = {}) {
   const list = Array.isArray(drugs) ? drugs.filter((drug) => drug && drug.id) : [];
@@ -1132,21 +1130,30 @@ export function chooseExpandedId(drugs, options = {}) {
   if (list.length === 1) return list[0].id;
 
   const addedId = options.addedId ?? null;
+  if (addedId && list.some((drug) => drug.id === addedId)) return addedId;
+
   const previousExpandedId = options.previousExpandedId ?? null;
-  const added = addedId ? list.find((drug) => drug.id === addedId) : null;
-  if (added && likelySuggestion(added)) return added.id;
-
-  const previous = previousExpandedId
-    ? list.find((drug) => drug.id === previousExpandedId)
-    : null;
-  if (previous && likelySuggestion(previous)) return previous.id;
-
-  const likely = list.find((drug) => likelySuggestion(drug));
-  if (likely) return likely.id;
-
-  if (added) return added.id;
-  if (previous) return previous.id;
+  if (previousExpandedId && list.some((drug) => drug.id === previousExpandedId)) {
+    return previousExpandedId;
+  }
   return list[0].id;
+}
+
+/** The drug that should be open after `addedId` is scanned onto the front of the list. */
+export function openCardAfterScan(drugs, addedId, previousExpandedId) {
+  const openId = chooseExpandedId(drugs, { addedId, previousExpandedId });
+  return (Array.isArray(drugs) ? drugs : []).find((drug) => drug?.id === openId) || null;
+}
+
+/** Title, suggestion, and chips taken only from this drug. */
+export function cardFacts(drug) {
+  return {
+    id: drug?.id ?? null,
+    barcode: String(drug?.barcode ?? ""),
+    productName: String(drug?.productName || ""),
+    recommendation: drug?.recommendation == null ? null : String(drug.recommendation),
+    chips: sideEffectBullets(drug?.sideEffects),
+  };
 }
 
 export function sideEffectCountLabel(count) {
