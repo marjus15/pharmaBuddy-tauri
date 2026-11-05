@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-11-05 — Chip rows stay whole when another product is in the basket
+
+- With two or more products, the open chip list gives up height so the collapsed row underneath still fits in the window. A single product keeps the previous cap.
+- The chip scroller’s height is an exact number of rows, and each row snaps. The clip lands on a row edge, so a chip is not cut through the middle.
+- The title, the «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» label, and «ⓘ Τελική απόφαση: φαρμακοποιός» stay outside the scroller. A new scan still opens first, and the basket still stays until the pharmacist clears it.
+
 ## 2026-11-05 — Chip list scrolls, and the basket stays until the pharmacist clears it
 
 - A long side-effect list no longer grows the open card off the screen. Only the chips under «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» scroll, and that area has a max height. The product title and «ⓘ Τελική απόφαση: φαρμακοποιός» stay on the card. The label stays above the chips.

@@ -160,6 +160,91 @@ export function panelMaxHeight(windowHeight) {
   return Math.max(0, height - PANEL_MAX_INSET);
 }
 
+/** One product: the chip list cap used before a second product asks for room. */
+export function soloChipBudget(windowHeight) {
+  const height = Number(windowHeight);
+  if (!Number.isFinite(height)) return 220;
+  return Math.max(72, Math.min(220, height - 280));
+}
+
+/**
+ * Space left for chips once the basket bar, the open card chrome, and the
+ * collapsed rows have taken their height. `occupied` is that reserved height.
+ */
+export function sharedChipBudget(windowHeight, occupied) {
+  return panelMaxHeight(windowHeight) - Math.max(0, Number(occupied) || 0);
+}
+
+/** Height of `rowCount` uniform rows. The gap sits between rows, not after the last one. */
+export function chipRowsHeight(rowCount, rowHeight, gap) {
+  const rows = Math.max(0, Math.floor(Number(rowCount) || 0));
+  const height = Number(rowHeight);
+  const spacing = Math.max(0, Number(gap) || 0);
+  if (rows <= 0 || !Number.isFinite(height) || height <= 0) return 0;
+  return rows * height + (rows - 1) * spacing;
+}
+
+/** How many uniform rows fit in `available` without opening a partial row. */
+export function chipRowsThatFit(available, rowHeight, gap, options = {}) {
+  const height = Number(rowHeight);
+  const spacing = Math.max(0, Number(gap) || 0);
+  const maxRows = options.maxRows ?? Infinity;
+  const minRows = options.minRows ?? 0;
+  if (!Number.isFinite(height) || height <= 0) return 0;
+  const room = Number(available);
+  if (!Number.isFinite(room)) return 0;
+  const stride = height + spacing;
+  let rows = Math.floor((Math.max(0, room) + spacing) / stride);
+  if (Number.isFinite(maxRows)) rows = Math.min(rows, Math.max(0, maxRows));
+  if (rows < minRows) rows = minRows;
+  return rows;
+}
+
+/**
+ * Pixel height of the chip scroller. Rows are added only when the whole row
+ * fits, so the clip lands on a row boundary. The first row is kept even when
+ * the budget is shorter than one row.
+ */
+export function chipViewportHeight(rowHeights, gap, available) {
+  const heights = (Array.isArray(rowHeights) ? rowHeights : [])
+    .map(Number)
+    .filter((height) => Number.isFinite(height) && height > 0);
+  const spacing = Math.max(0, Number(gap) || 0);
+  if (heights.length === 0) return 0;
+  const room = Number(available);
+  let used = 0;
+  let count = 0;
+  for (const height of heights) {
+    const next = used + (count > 0 ? spacing : 0) + height;
+    if (count >= 1 && Number.isFinite(room) && next > room) break;
+    used = next;
+    count += 1;
+  }
+  return used;
+}
+
+/**
+ * Max height of the chip list. Two or more products use the shared budget so
+ * the collapsed rows stay on screen. One product uses the solo cap. Either
+ * way the result is an exact number of rows.
+ */
+export function chipListMaxHeight({
+  productCount,
+  rowHeight,
+  gap,
+  rowCount,
+  sharedBudget,
+  soloBudget,
+} = {}) {
+  const rows = Math.max(0, Math.floor(Number(rowCount) || 0));
+  const cap = productCount >= 2 ? Number(sharedBudget) : Number(soloBudget);
+  const fit = chipRowsThatFit(cap, rowHeight, gap, {
+    maxRows: rows,
+    minRows: rows > 0 ? 1 : 0,
+  });
+  return chipRowsHeight(fit, rowHeight, gap);
+}
+
 /**
  * Keep the window inside the monitor work area.
  * The top stays put so the panel grows downward. The right edge stays put

@@ -419,16 +419,28 @@ body {
 
 .side-effect-chips {
   display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-direction: column;
   align-content: flex-start;
   gap: 6px;
   min-height: 0;
-  max-height: max(72px, min(220px, calc(100vh - 280px)));
   overflow-y: auto;
   overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-gutter: stable;
   scrollbar-color: #2a4550 transparent;
   scrollbar-width: thin;
+}
+
+/* Each row is one snap target. The scroller height is an exact number of these rows. */
+.side-effect-row {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 6px;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .side-effect-chips::-webkit-scrollbar {

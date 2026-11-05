@@ -17,6 +17,7 @@ import {
   basketSuggestionKind,
   cardFacts,
   cardMetaLine,
+  chipViewportHeight,
   chooseExpandedId,
   clampWindowToWorkArea,
   collapsedSideEffectCountLabel,
@@ -24,6 +25,9 @@ import {
   formatScanClock,
   latestDrugId,
   openCardAfterScan,
+  panelMaxHeight,
+  sharedChipBudget,
+  soloChipBudget,
   loginErrorOnStartup,
   loginFailureMessage,
   reduceUpdateUi,
@@ -597,6 +601,14 @@ function showPreviewDrugs(drugs) {
   setOrbState("idle");
 }
 
+function scrollPreviewChips(params) {
+  if (params.get("scroll") !== "end") return;
+  setTimeout(() => {
+    const scroller = document.querySelector(".drug-item.is-expanded .side-effect-chips");
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }, 50);
+}
+
 function renderPreview(params) {
   document.body.classList.add("preview-stage");
   const state = params.get("preview");
@@ -788,12 +800,47 @@ function renderPreview(params) {
         status: "idle",
       },
     ]);
-    if (params.get("scroll") === "end") {
-      setTimeout(() => {
-        const scroller = document.querySelector(".drug-item.is-expanded .side-effect-chips");
-        if (scroller) scroller.scrollTop = scroller.scrollHeight;
-      }, 50);
-    }
+    scrollPreviewChips(params);
+    return;
+  }
+
+  if (state === "chips-pair") {
+    const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
+    showPreviewDrugs([
+      {
+        id: "pair-xanax",
+        barcode: "2801864302013",
+        found: true,
+        productName: "XANAX TABLET 0,25MG/TAB BT x 30",
+        formLabel: "Δισκία",
+        activeIngredient: "Alprazolam",
+        atcCode: "N05BA12",
+        sideEffects:
+          "Συχνές: κατάθλιψη, καταστολή, υπνηλία, αταξία, ζάλη, κεφαλαλγία, ναυτία, έμετος, δυσκοιλιότητα, διάρροια, ξηροστομία, θολή όραση, κόπωση, αϋπνία, σύγχυση, τρόμος, αμνησία, εξάνθημα, κνησμός, δυσπεψία.",
+        sideEffectsStatus: "done",
+        scannedAt: at(15, 50),
+        recommendation: null,
+        errorMessage: null,
+        status: "done",
+      },
+      {
+        id: "pair-zircos",
+        barcode: "2803151602011",
+        found: true,
+        productName: "ZIRCOS F.C.TAB",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Rosuvastatin",
+        atcCode: "C10AA07",
+        sideEffects:
+          "Συχνές: σακχαρώδης διαβήτης, κεφαλαλγία, ζάλη, δυσκοιλιότητα, ναυτία, κοιλιακό άλγος, μυαλγία, εξασθένιση. Όχι συχνές: κνησμός, εξάνθημα, κνίδωση. Σπάνιες: θρομβοπενία, παγκρεατίτιδα, ραβδομυόλυση.",
+        sideEffectsStatus: "done",
+        scannedAt: at(15, 49),
+        recommendation: "Μαζί με το Zircos, μια σημείωση για τη στατίνη.",
+        errorMessage: null,
+        status: "done",
+      },
+    ]);
+    scrollPreviewChips(params);
     return;
   }
 
@@ -1762,6 +1809,7 @@ function scheduleSidebarResize() {
   sidebarResizeQueued = true;
   requestAnimationFrame(() => {
     sidebarResizeQueued = false;
+    fitOpenChipList();
     void resizeWindow("sidebar");
   });
 }
@@ -2166,6 +2214,122 @@ function createExpandedDrug(drug) {
   return item;
 }
 
+const CHIP_ROW_GAP = 6;
+
+function unwrapChipRows(scroller) {
+  const rows = [...scroller.querySelectorAll(".side-effect-row")];
+  if (rows.length === 0) return;
+  scroller.replaceChildren(...rows.flatMap((row) => [...row.children]));
+}
+
+function layoutChipRows(scroller) {
+  const chips = [...scroller.querySelectorAll(":scope > .side-effect-chip")];
+  if (chips.length === 0) return;
+  const groups = [];
+  for (const chip of chips) {
+    const top = chip.offsetTop;
+    const last = groups[groups.length - 1];
+    if (!last || Math.abs(last.top - top) > 2) groups.push({ top, items: [chip] });
+    else last.items.push(chip);
+  }
+  scroller.replaceChildren(
+    ...groups.map((group) => {
+      const row = document.createElement("div");
+      row.className = "side-effect-row";
+      row.append(...group.items);
+      return row;
+    }),
+  );
+}
+
+function verticalBox(el, props) {
+  if (!el) return 0;
+  const style = getComputedStyle(el);
+  return props.reduce((sum, prop) => sum + (parseFloat(style[prop]) || 0), 0);
+}
+
+/** Size the open chip list to whole rows, leaving the collapsed products on screen. */
+function fitOpenChipList() {
+  const chips = drugList?.querySelector(".drug-item.is-expanded .side-effect-chips");
+  const collapsed = drugList?.querySelector(".drug-collapsed");
+  const card = chips?.closest(".drug-card");
+  if (collapsed) {
+    collapsed.style.maxHeight = "";
+    collapsed.style.flexShrink = "";
+  }
+  if (!chips || chips.classList.contains("is-hidden") || !card) return;
+
+  const sidebarMax = drugSidebar?.style.maxHeight ?? "";
+  const cardMax = card.style.maxHeight;
+  if (drugSidebar) drugSidebar.style.maxHeight = "none";
+  card.style.maxHeight = "none";
+  unwrapChipRows(chips);
+  chips.style.maxHeight = "none";
+  chips.style.height = "auto";
+  chips.style.flexDirection = "row";
+  chips.style.flexWrap = "wrap";
+
+  const looseChips = chips.querySelectorAll(":scope > .side-effect-chip").length;
+  if (looseChips === 0) {
+    chips.style.flexDirection = "";
+    chips.style.flexWrap = "";
+    if (drugSidebar) drugSidebar.style.maxHeight = sidebarMax;
+    card.style.maxHeight = cardMax;
+    return;
+  }
+  layoutChipRows(chips);
+  chips.style.flexDirection = "";
+  chips.style.flexWrap = "";
+
+  const rows = [...chips.querySelectorAll(".side-effect-row")];
+  const rowHeights = rows.map((row) => row.offsetHeight);
+  let chrome = verticalBox(card, ["borderTopWidth", "borderBottomWidth"]);
+  for (const child of card.children) {
+    chrome += child.contains(chips) ? child.offsetHeight - chips.offsetHeight : child.offsetHeight;
+  }
+
+  const windowHeight = window.innerHeight;
+  const rootPad = verticalBox(document.querySelector(".app-root"), ["paddingTop", "paddingBottom"]);
+  const sidebarRoom = Math.min(panelMaxHeight(windowHeight), Math.max(0, windowHeight - rootPad));
+  const basketHeight = basketBar && !basketBar.classList.contains("hidden") ? basketBar.offsetHeight : 0;
+  const sidebarGap = basketHeight > 0 ? verticalBox(drugSidebar, ["rowGap"]) || 8 : 0;
+  const listGap = collapsed ? verticalBox(drugList, ["rowGap"]) || 8 : 0;
+  const listPad = verticalBox(drugList, ["paddingTop", "paddingBottom"]);
+  const collapsedHeight = collapsed ? collapsed.scrollHeight : 0;
+  const productCount = scannedDrugs.length;
+  const expanded = chips.closest(".drug-item");
+  if (expanded) expanded.style.flexShrink = "";
+
+  let budget = soloChipBudget(windowHeight);
+  if (productCount >= 2 && collapsed) {
+    const occupied = sidebarGap + basketHeight + listPad + listGap + chrome + collapsedHeight;
+    const outside = Math.max(0, panelMaxHeight(windowHeight) - sidebarRoom);
+    const room = sharedChipBudget(windowHeight, occupied + outside);
+    const minChips = chipViewportHeight(rowHeights.slice(0, 1), CHIP_ROW_GAP, Number.POSITIVE_INFINITY);
+    budget = room;
+    if (room < minChips) {
+      budget = minChips;
+      const collapsedRoom = Math.max(0, sidebarRoom - (occupied - collapsedHeight) - minChips);
+      if (collapsedHeight > collapsedRoom) collapsed.style.maxHeight = `${Math.floor(collapsedRoom)}px`;
+    }
+    collapsed.style.flexShrink = "0";
+    if (expanded) expanded.style.flexShrink = "0";
+  }
+
+  const snapped = chipViewportHeight(rowHeights, CHIP_ROW_GAP, budget);
+  const contentHeight = chipViewportHeight(rowHeights, CHIP_ROW_GAP, Number.POSITIVE_INFINITY);
+  if (snapped >= contentHeight) {
+    chips.style.height = "";
+    chips.style.maxHeight = `${contentHeight}px`;
+  } else {
+    chips.style.height = `${snapped}px`;
+    chips.style.maxHeight = `${snapped}px`;
+  }
+
+  if (drugSidebar) drugSidebar.style.maxHeight = sidebarMax;
+  card.style.maxHeight = cardMax;
+}
+
 function renderBasketBar() {
   if (!basketBar) return;
   basketBar.replaceChildren();
@@ -2216,7 +2380,10 @@ function renderDrugList() {
   openEl.classList.toggle("is-latest", open.id === newestId);
   drugList.appendChild(openEl);
   const collapsed = scannedDrugs.filter((drug) => drug.id !== open.id);
-  if (collapsed.length === 0) return;
+  if (collapsed.length === 0) {
+    fitOpenChipList();
+    return;
+  }
   const scroller = document.createElement("div");
   scroller.className = "drug-collapsed";
   for (const drug of collapsed) {
@@ -2225,6 +2392,7 @@ function renderDrugList() {
     scroller.appendChild(el);
   }
   drugList.appendChild(scroller);
+  fitOpenChipList();
 }
 
 function appendDrug(drug) {
