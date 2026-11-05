@@ -15,9 +15,15 @@ import {
   basketSuggestionKind,
   cardMetaLine,
   cardFacts,
+  chipListMaxHeight,
+  chipRowsHeight,
+  chipRowsThatFit,
+  chipViewportHeight,
   chooseExpandedId,
   clampWindowToWorkArea,
   panelMaxHeight,
+  sharedChipBudget,
+  soloChipBudget,
   collapsedSideEffectCountLabel,
   dosageFormLabel,
   excerptNeedsRicherSource,
@@ -291,7 +297,11 @@ test("pharmacist UI has no source line and uses the approved card", () => {
   assert.equal(/\.recommendation-text\s*\{[^}]*-webkit-line-clamp/.test(css), false);
   assert.equal(/\.drug-side-effects[^}]*overflow-y:\s*auto/s.test(css), false);
   assert.match(css, /\.side-effect-chips\s*\{[^}]*overflow-y:\s*auto;/s);
-  assert.match(css, /\.side-effect-chips\s*\{[^}]*max-height:\s*max\(72px, min\(220px, calc\(100vh - 280px\)\)\);/s);
+  assert.match(css, /\.side-effect-chips\s*\{[^}]*scroll-snap-type:\s*y mandatory;/s);
+  assert.match(css, /\.side-effect-row\s*\{[^}]*scroll-snap-align:\s*start;/s);
+  assert.equal(/\.side-effect-chips\s*\{[^}]*max-height:\s*max\(72px/.test(css), false);
+  assert.match(main, /fitOpenChipList\(/);
+  assert.match(main, /chipViewportHeight\(/);
   assert.match(css, /\.side-effects-label\s*\{[^}]*flex-shrink:\s*0;/s);
   assert.match(css, /\.drug-card-hd\s*\{[^}]*flex-shrink:\s*0;/s);
   assert.match(css, /\.drug-card-ft\s*\{[^}]*flex-shrink:\s*0;/s);
@@ -454,6 +464,43 @@ test("the newest scan is inserted first and stays the latest card", () => {
   assert.match(main, /is-latest/);
   assert.match(main, /className = "drug-collapsed"/);
   assert.match(main, /new ResizeObserver/);
+});
+
+test("chip rows stay whole and shrink when a collapsed product needs the screen", () => {
+  assert.equal(chipRowsHeight(3, 30, 6), 102);
+  assert.equal(chipRowsThatFit(102, 30, 6), 3);
+  assert.equal(chipRowsThatFit(131, 30, 6), 3);
+  assert.equal(chipRowsThatFit(29, 30, 6, { minRows: 1 }), 1);
+
+  const heights = [30, 30, 30, 30, 30, 30, 30, 30];
+  assert.equal(chipViewportHeight(heights, 6, 120), 102);
+  assert.equal(chipViewportHeight(heights, 6, 30), 30);
+  assert.equal(chipViewportHeight([28, 44, 28], 6, 80), 78);
+
+  const shared = sharedChipBudget(700, 580);
+  assert.equal(shared, panelMaxHeight(700) - 580);
+  assert.equal(
+    chipListMaxHeight({
+      productCount: 2,
+      rowHeight: 30,
+      gap: 6,
+      rowCount: 8,
+      sharedBudget: shared,
+      soloBudget: soloChipBudget(700),
+    }),
+    chipRowsHeight(chipRowsThatFit(shared, 30, 6, { maxRows: 8, minRows: 1 }), 30, 6),
+  );
+  assert.equal(
+    chipListMaxHeight({
+      productCount: 1,
+      rowHeight: 30,
+      gap: 6,
+      rowCount: 8,
+      sharedBudget: 40,
+      soloBudget: 220,
+    }),
+    chipRowsHeight(6, 30, 6),
+  );
 });
 
 test("the window grows downward and stays inside the work area", () => {
