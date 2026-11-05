@@ -27,6 +27,7 @@ import {
   loginFailureMessage,
   reduceUpdateUi,
   reportStatusFor,
+  excerptNeedsRicherSource,
   sideEffectBullets,
   sideEffectCountLabel,
   visibleRecommendation,
@@ -720,6 +721,55 @@ function renderPreview(params) {
       errorMessage: null,
       status: index === 0 ? (mode === "loading" ? "loading" : "done") : "idle",
     })));
+    return;
+  }
+
+  if (state === "spc-zircos" || state === "spc-augmentin" || state === "spc-aspirin") {
+    const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
+    const cards = {
+      "spc-zircos": {
+        id: "spc-zircos",
+        barcode: "2803151602011",
+        productName: "ZIRCOS F.C.TAB 10MG",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Rosuvastatin",
+        atcCode: "C10AA07",
+        sideEffects:
+          "Συχνές: Σακχαρώδης διαβήτης, Κεφαλαλγία, Ζάλη, Δυσκοιλιότητα, Ναυτία, Κοιλιακό άλγος, Μυαλγία, Εξασθένιση. Σπάνιες: Θρομβοπενία, Παγκρεατίτιδα, Ραβδομυόλυση.",
+      },
+      "spc-augmentin": {
+        id: "spc-augmentin",
+        barcode: "2801759904025",
+        productName: "AUGMENTIN F.C.TAB (500+125)MG",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Amoxicillin / Clavulanic acid",
+        atcCode: "J01CR02",
+        sideEffects:
+          "Οι ποιο συχνά αναφερθείσες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία και έμετος. Συχνές: Βλεννογονοδερματική καντιντίαση, Διάρροια, Ναυτία, Έμετος. Σπάνιες: Αναστρέψιμη λευκοπενία, Θρομβοπενία.",
+      },
+      "spc-aspirin": {
+        id: "spc-aspirin",
+        barcode: "2800416704022",
+        productName: "ASPIRIN TAB 100MG",
+        formLabel: "Δισκία",
+        activeIngredient: "Acetylsalicylic acid",
+        atcCode: "B01AC06",
+        sideEffects:
+          "Συχνές: Ζάλη, Δυσπεψία, Γαστρεντερικό και κοιλιακό άλγος, Γαστρεντερική αιμορραγία, Εξάνθημα, Κνησμός.",
+      },
+    };
+    const card = cards[state];
+    showPreviewDrugs([
+      {
+        ...card,
+        found: true,
+        sideEffectsStatus: "done",
+        scannedAt: at(12, 40),
+        recommendation: null,
+        errorMessage: null,
+        status: "idle",
+      },
+    ]);
     return;
   }
 
@@ -1745,6 +1795,8 @@ async function startNewCustomer() {
 }
 
 function createDrugEntry(lookupResult, barcode) {
+  const excerpt = lookupResult.side_effects || null;
+  const useful = Boolean(excerpt) && !excerptNeedsRicherSource(excerpt);
   return {
     id: createDrugId(),
     barcode,
@@ -1752,8 +1804,9 @@ function createDrugEntry(lookupResult, barcode) {
     productName: lookupResult.product_name || "",
     activeIngredient: lookupResult.active_ingredient || "",
     atcCode: lookupResult.atc_code || "",
-    sideEffects: lookupResult.side_effects || null,
-    sideEffectsStatus: lookupResult.side_effects ? "done" : "idle",
+    sideEffects: useful ? excerpt : null,
+    sideEffectsStatus: useful ? "done" : excerpt ? "loading" : "idle",
+    sideEffectsFallback: useful ? null : excerpt,
     scannedAt: new Date().toISOString(),
     recommendation: null,
     errorMessage: null,
@@ -2281,14 +2334,29 @@ async function showScanError(errorMessage) {
   console.error("[Scan] Error:", errorMessage);
 }
 
+function applySideEffectFallback(drug) {
+  const fallback = String(drug.sideEffectsFallback || "").trim();
+  if (fallback && sideEffectBullets(fallback).length) {
+    drug.sideEffects = fallback;
+    drug.sideEffectsStatus = "done";
+    return;
+  }
+  drug.sideEffects = null;
+  drug.sideEffectsStatus = "empty";
+}
+
 function loadSideEffects(drug) {
-  if (!drug || drug.sideEffects || drug.sideEffectsStatus === "empty") {
+  if (!drug) return Promise.resolve();
+  if (drug.sideEffects && !excerptNeedsRicherSource(drug.sideEffects)) {
     return Promise.resolve();
   }
+  if (drug.sideEffectsRicherTried) return Promise.resolve();
   if (sideEffectLoads.has(drug.id)) {
     return sideEffectLoads.get(drug.id);
   }
 
+  drug.sideEffectsRicherTried = true;
+  drug.sideEffects = null;
   drug.sideEffectsStatus = "loading";
   renderDrugList();
 
@@ -2299,7 +2367,7 @@ function loadSideEffects(drug) {
   })
     .then(async (result) => {
       const text = String(result?.side_effects || "").trim();
-      if (text) {
+      if (text && sideEffectBullets(text).length) {
         drug.sideEffects = text;
         drug.sideEffectsStatus = "done";
         if (result.active_ingredient && !drug.activeIngredient) {
@@ -2312,12 +2380,12 @@ function loadSideEffects(drug) {
           drug.productName = result.product_name;
         }
       } else {
-        drug.sideEffectsStatus = "empty";
+        applySideEffectFallback(drug);
       }
     })
     .catch((err) => {
       console.warn("[SideEffects] fetch failed:", err);
-      drug.sideEffectsStatus = "empty";
+      applySideEffectFallback(drug);
     })
     .finally(async () => {
       sideEffectLoads.delete(drug.id);

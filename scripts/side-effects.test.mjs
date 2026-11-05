@@ -20,6 +20,8 @@ import {
   panelMaxHeight,
   collapsedSideEffectCountLabel,
   dosageFormLabel,
+  excerptNeedsRicherSource,
+  isTruncatedSideEffectTeaser,
   latestDrugId,
   sideEffectBullets,
   sideEffectCountLabel,
@@ -117,6 +119,73 @@ test("aspirin public excerpt does not turn the safety-profile heading into a bul
   assert.equal(SIDE_EFFECTS_FALLBACK, "Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.");
 });
 
+const STORED = {
+  zircos:
+    "Οι ανεπιθύμητες ενέργειες που παρατηρούνται με το Zircos είναι γενικά ήπιες και παροδικές. Σε ελεγχόμενες κλινικές μελέτες ποσοστό μικρότερο του 4% των ασθενών που έλαβαν θεραπεία με ροσουβαστατίνη...",
+  augmentin:
+    "Οι ποιο συχνά αναφερθείσες ανεπιθύμητες ενέργειες (ΑΕ) είναι διάρροια, ναυτία και έμετος. Οι ΑΕ από κλινικές δοκιμές και μετεγκριτική παρακολούθηση με το Augmentin, ταξινομήθηκαν σύμφωνα με την Kατ...",
+  aspirin: ASPIRIN_PUBLIC_EXCERPT,
+  depon:
+    "Στις θεραπευτικές δόσεις στερείται σχεδόν ανεπιθύμητων ενεργειών. Σπάνια εμφανίζονται αντιδράσεις υπερευαισθησίας, που εκδηλώνονται με δερματικό εξάνθημα ή ερυθρότητα, οπότε απαιτείται διακοπή της ...",
+};
+
+const ZIRCOS_SPC =
+  "Συχνές: κεφαλαλγία, ζάλη, δυσκοιλιότητα, ναυτία, κοιλιακό άλγος, μυαλγία. Σπάνιες: θρομβοπενία, παγκρεατίτιδα, ραβδομυόλυση.";
+
+const ASPIRIN_SPC =
+  "Περίληψη του προφίλ ασφαλείας Οι καταγραφόμενες ανεπιθύμητες ενέργειες βασίζονται σε αυθόρμητες αναφορές. Συχνές: δυσπεψία, ζάλη. Όχι συχνές: γαστρεντερική αιμορραγία. Σπάνιες: έλκος στομάχου, αναφυλακτική αντίδραση.";
+
+test("stored galinos teasers are not a finished side-effect list", () => {
+  assert.equal(isTruncatedSideEffectTeaser(STORED.zircos), true);
+  assert.equal(excerptNeedsRicherSource(STORED.zircos), true);
+  assert.deepEqual(sideEffectBullets(STORED.zircos), []);
+  assert.equal(excerptNeedsRicherSource(STORED.aspirin), true);
+  assert.deepEqual(sideEffectBullets(STORED.aspirin), []);
+  assert.equal(excerptNeedsRicherSource(STORED.augmentin), true);
+  assert.deepEqual(sideEffectBullets(STORED.augmentin), ["Διάρροια", "Ναυτία", "Έμετος"]);
+  assert.equal(excerptNeedsRicherSource("Συχνές: ναυτία και κεφαλαλγία."), false);
+});
+
+test("a prose lead does not become an organ fragment or a painkiller word", () => {
+  const bullets = sideEffectBullets(
+    "Οι πιο συχνές ανεπιθύμητες ενέργειες είναι γαστρεντερικής φύσης. Ο κίνδυνος να εμφανιστεί γαστρεντερική αιμορραγία εξαρτάται από τη δόση. Ναυτία, έμετος και διάρροια έχουν αναφερθεί. Αυτοθεραπεία με αναλγητικά.",
+  );
+  assert.deepEqual(bullets.slice(0, 4), [
+    "Γαστρεντερική αιμορραγία",
+    "Ναυτία",
+    "Έμετος",
+    "Διάρροια",
+  ]);
+  assert.equal(
+    bullets.some((bullet) => /φύσης|αναλγητ|εξαρτάται|εμφανισ/i.test(bullet)),
+    false,
+  );
+});
+
+test("a sentence that hides the effect after «με» still yields the effect", () => {
+  const depon = sideEffectBullets(STORED.depon);
+  assert.equal(depon.includes("Δερματικό εξάνθημα"), true);
+  assert.equal(depon.includes("Ερυθρότητα"), true);
+});
+
+test("zircos, aspirin and augmentin spc lists become chips without cross-product names", () => {
+  const zircos = sideEffectBullets(ZIRCOS_SPC);
+  assert.deepEqual(zircos.slice(0, 4), ["Κεφαλαλγία", "Ζάλη", "Δυσκοιλιότητα", "Ναυτία"]);
+  assert.equal(zircos.includes("Μυαλγία"), true);
+  assert.equal(zircos.includes("Ραβδομυόλυση"), true);
+  assert.equal(zircos.some((bullet) => /καντιντ|αμοξικιλ|augmentin/i.test(bullet)), false);
+
+  const aspirin = sideEffectBullets(ASPIRIN_SPC);
+  assert.deepEqual(aspirin.slice(0, 3), ["Δυσπεψία", "Ζάλη", "Γαστρεντερική αιμορραγία"]);
+  assert.equal(aspirin.includes("Έλκος στομάχου"), true);
+  assert.equal(aspirin.some((bullet) => /προφίλ|περίληψη|καντιντ/i.test(bullet)), false);
+
+  const augmentin = sideEffectBullets(AUGMENTIN_EXCERPT);
+  assert.equal(augmentin.includes("Διάρροια"), true);
+  assert.equal(augmentin.includes("Καντιντίαση"), true);
+  assert.equal(augmentin.some((bullet) => /μυαλγία|zircos|ροσουβαστατ/i.test(bullet)), false);
+});
+
 test("an aspirin-like list still yields real side effects and drops headings", () => {
   const bullets = sideEffectBullets(ASPIRIN_WITH_LIST);
   assert.deepEqual(bullets.slice(0, 5), [
@@ -193,6 +262,7 @@ test("pharmacist UI has no source line and uses the approved card", () => {
     .join("\n");
   assert.equal(/Γαληνός|galinos|ΠΧΠ|Απόσπασμα|Πηγή|πηγή/i.test(ui), false);
   const main = readFileSync("src/main.js", "utf8");
+  assert.match(main, /excerptNeedsRicherSource\(/);
   assert.match(main, /SIDE_EFFECTS_TRUST_LINE/);
   assert.match(main, /SIDE_EFFECTS_FALLBACK/);
   assert.match(main, /basketSuggestionKind\(/);
@@ -503,6 +573,11 @@ test("the suggestion tag follows local ATC rules and does not call the model", (
 test("the recommendation prompt does not recite side effects", () => {
   const source = readFileSync("supabase/functions/get-ai-recommendation/index.ts", "utf8");
   assert.match(source, /Μην αναφέρεις παρενέργειες στην πρόταση/);
+  assert.match(source, /cleanFact\(meta\.side_effects, 4000\)/);
+  assert.match(source, /sideEffectsForModel/);
+  const cache = readFileSync("supabase/functions/cache-catalog-entry/index.ts", "utf8");
+  assert.match(cache, /isTruncatedTeaser/);
+  assert.match(cache, /smpc_4_8/);
 });
 
 const PANADOL_ACTIFAST_EXCERPT =

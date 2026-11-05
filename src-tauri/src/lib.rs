@@ -5,6 +5,7 @@ mod catalog_cache;
 mod commercial_registry;
 mod env_config;
 mod eprescription;
+mod farmako_spc;
 mod galinos;
 mod pharmacy_config;
 mod problem_report;

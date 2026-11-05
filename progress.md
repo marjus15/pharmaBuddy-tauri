@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-11-05 — Side-effect chips from the full SmPC list
+
+- The eight reported barcodes already store a Galinos excerpt of about 200 characters that ends in «...». The card treated that string as finished. The chip parser drops the safety-profile heading and the frequency legend, so ZIRCOS, ASPIRIN, XANAX, PANADOL, NUROFEN, and LIPITOR had no chips and showed «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.» AUGMENTIN's teaser names διάρροια, ναυτία, and έμετος. DEPON's teaser names the rash only after «με».
+- A scan whose excerpt is that teaser, or yields no chips, asks the desktop app for section 4.8. The lookup uses the barcode's own SmPC page, and the page title must contain the product's brand token, so a ZIRCOS page is not used for Augmentin. The stored line is a frequency list such as «Συχνές: κεφαλαλγία, ζάλη, …». The card still says only «ⓘ Τελική απόφαση: φαρμακοποιός».
+- The chip parser keeps an effect that sits after «με», drops a sentence fragment such as «γαστρεντερικής φύσης», and does not treat «αναλγητικά» as πόνος.
+- Catalog rows were not edited. `cache-catalog-entry` and `get-ai-recommendation` are updated in the repo and are not deployed. Until they are, each scan of a teaser fetches section 4.8 again. After deploy, a longer excerpt can replace the teaser, and the lookup can return up to 4000 characters. The model prompt still sees 500.
+
 ## 2026-10-30 — Basket grows downward from the orb
 
 - The panel shares the orb's top edge and only grows downward. The window top stays put, and the height and position are clamped to the monitor work area so the window never crosses the top of the screen.
