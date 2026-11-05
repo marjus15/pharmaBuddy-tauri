@@ -224,6 +224,50 @@ export function chipViewportHeight(rowHeights, gap, available) {
 }
 
 /**
+ * Inline size for the open chip scroller.
+ * `null` means no row had a real height, which happens while the sidebar is
+ * `display: none`. The caller must leave height and max-height alone instead
+ * of writing 0, or the chips stay invisible under the label.
+ * A null `height` with a positive `maxHeight` means every row fits.
+ */
+export function chipScrollerLock(rowHeights, gap, available) {
+  const heights = (Array.isArray(rowHeights) ? rowHeights : [])
+    .map(Number)
+    .filter((height) => Number.isFinite(height) && height > 0);
+  if (heights.length === 0) return null;
+  const snapped = chipViewportHeight(heights, gap, available);
+  const content = chipViewportHeight(heights, gap, Number.POSITIVE_INFINITY);
+  if (snapped <= 0 || content <= 0) return null;
+  if (snapped >= content) return { height: null, maxHeight: content };
+  return { height: snapped, maxHeight: snapped };
+}
+
+/**
+ * Window height used to budget chip rows.
+ * The collapsed orb is shorter than the sidebar the window is about to grow
+ * into. A fit during that open uses the screen. A sidebar that is already
+ * open uses its own height, so a second product still keeps its rows on screen.
+ */
+export function chipFitWindowHeight(innerHeight, availHeight, collapsedHeight = 288) {
+  const inner = Number(innerHeight);
+  const avail = Number(availHeight);
+  const collapsed = Number(collapsedHeight);
+  const innerOk = Number.isFinite(inner) && inner > 0;
+  const availOk = Number.isFinite(avail) && avail > 0;
+  const stillCollapsed =
+    innerOk &&
+    availOk &&
+    Number.isFinite(collapsed) &&
+    collapsed > 0 &&
+    inner <= collapsed + 48 &&
+    avail > inner;
+  if (stillCollapsed) return avail;
+  if (innerOk) return inner;
+  if (availOk) return avail;
+  return 700;
+}
+
+/**
  * Max height of the chip list. Two or more products use the shared budget so
  * the collapsed rows stay on screen. One product uses the solo cap. Either
  * way the result is an exact number of rows.

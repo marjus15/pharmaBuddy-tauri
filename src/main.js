@@ -17,6 +17,8 @@ import {
   basketSuggestionKind,
   cardFacts,
   cardMetaLine,
+  chipFitWindowHeight,
+  chipScrollerLock,
   chipViewportHeight,
   chooseExpandedId,
   clampWindowToWorkArea,
@@ -732,6 +734,39 @@ function renderPreview(params) {
       errorMessage: null,
       status: index === 0 ? (mode === "loading" ? "loading" : "done") : "idle",
     })));
+    return;
+  }
+
+  if (state === "zircos-scan") {
+    const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
+    const drug = {
+      id: "zircos-scan",
+      barcode: "2803151602011",
+      found: true,
+      productName: "ZIRCOS F.C.TAB",
+      formLabel: "Επικαλ. δισκία",
+      activeIngredient: "Rosuvastatin",
+      atcCode: "C10AA07",
+      sideEffects:
+        "Συχνές: Σακχαρώδης διαβήτης, Κεφαλαλγία, Ζάλη, Δυσκοιλιότητα, Ναυτία, Κοιλιακό άλγος, Μυαλγία, Εξασθένιση. Σπάνιες: Θρομβοπενία, Παγκρεατίτιδα, Ραβδομυόλυση.",
+      sideEffectsStatus: "done",
+      scannedAt: at(16, 3),
+      recommendation: null,
+      errorMessage: null,
+      status: "idle",
+    };
+    scannedDrugs = [drug];
+    activeDrugId = null;
+    expandedDrugId = drug.id;
+    userPinnedExpansion = true;
+    sidebarOpen = false;
+    drugSidebar.classList.add("hidden");
+    drugSidebar.classList.remove("visible");
+    const pharmacy = document.body.dataset.previewPharmacy || "";
+    if (pharmacy) updatePharmacyFooter(pharmacy);
+    renderDrugList();
+    void openSidebar();
+    setOrbState("idle");
     return;
   }
 
@@ -1799,16 +1834,31 @@ async function resizeWindow(sizeKey) {
     await applyWindowBox(width, height, visibleFloorHeight());
   } finally {
     applyingWindow = false;
+    if (sidebarFitDeferred && sidebarOpen) {
+      sidebarFitDeferred = false;
+      const openChips = drugList?.querySelector(".drug-item.is-expanded .side-effect-chips");
+      if (openChips && !chipLockIsPositive(openChips)) fitOpenChipList();
+    }
   }
 }
 
 let sidebarResizeQueued = false;
+let sidebarFitDeferred = false;
 
 function scheduleSidebarResize() {
-  if (!WINDOW || !sidebarOpen || applyingWindow || sidebarResizeQueued) return;
+  if (!WINDOW || !sidebarOpen) return;
+  if (applyingWindow || sidebarResizeQueued) {
+    sidebarFitDeferred = true;
+    return;
+  }
   sidebarResizeQueued = true;
   requestAnimationFrame(() => {
     sidebarResizeQueued = false;
+    if (!sidebarOpen || applyingWindow) {
+      sidebarFitDeferred = true;
+      return;
+    }
+    sidebarFitDeferred = false;
     fitOpenChipList();
     void resizeWindow("sidebar");
   });
@@ -1864,7 +1914,18 @@ async function openSidebar() {
   void drugSidebar.offsetWidth;
   drugSidebar.classList.add("visible");
   sidebarOpen = true;
+  // The scan renders while this panel is still display:none. Fit again now
+  // that rows have a real width. The orb window is still the collapsed size,
+  // so budget against the screen the sidebar is about to grow into.
+  const room = chipFitWindowHeight(
+    window.innerHeight,
+    window.screen?.availHeight,
+    SIZES.collapsed.height,
+  );
+  fitOpenChipList({ windowHeight: room });
   await resizeWindow("sidebar");
+  const openChips = drugList?.querySelector(".drug-item.is-expanded .side-effect-chips");
+  if (openChips && !chipLockIsPositive(openChips)) fitOpenChipList({ windowHeight: room });
 }
 
 async function collapseSidebar() {
@@ -2248,8 +2309,27 @@ function verticalBox(el, props) {
   return props.reduce((sum, prop) => sum + (parseFloat(style[prop]) || 0), 0);
 }
 
+function chipListCanMeasure(el) {
+  if (!el || typeof el.getClientRects !== "function") return false;
+  if (el.getClientRects().length === 0) return false;
+  return el.getBoundingClientRect().width >= 1;
+}
+
+function releaseChipLock(chips) {
+  unwrapChipRows(chips);
+  chips.style.height = "";
+  chips.style.maxHeight = "";
+  chips.style.flexDirection = "";
+  chips.style.flexWrap = "";
+}
+
+function chipLockIsPositive(chips) {
+  const max = parseFloat(chips?.style?.maxHeight);
+  return Number.isFinite(max) && max > 0;
+}
+
 /** Size the open chip list to whole rows, leaving the collapsed products on screen. */
-function fitOpenChipList() {
+function fitOpenChipList(options = {}) {
   const chips = drugList?.querySelector(".drug-item.is-expanded .side-effect-chips");
   const collapsed = drugList?.querySelector(".drug-collapsed");
   const card = chips?.closest(".drug-card");
@@ -2258,6 +2338,13 @@ function fitOpenChipList() {
     collapsed.style.flexShrink = "";
   }
   if (!chips || chips.classList.contains("is-hidden") || !card) return;
+
+  // display:none (the closed sidebar) reports every row as 0px tall. Writing
+  // that as max-height hides the chips after the panel opens.
+  if (!chipListCanMeasure(chips)) {
+    releaseChipLock(chips);
+    return;
+  }
 
   const sidebarMax = drugSidebar?.style.maxHeight ?? "";
   const cardMax = card.style.maxHeight;
@@ -2288,7 +2375,8 @@ function fitOpenChipList() {
     chrome += child.contains(chips) ? child.offsetHeight - chips.offsetHeight : child.offsetHeight;
   }
 
-  const windowHeight = window.innerHeight;
+  const requested = Number(options.windowHeight);
+  const windowHeight = Number.isFinite(requested) && requested > 0 ? requested : window.innerHeight;
   const rootPad = verticalBox(document.querySelector(".app-root"), ["paddingTop", "paddingBottom"]);
   const sidebarRoom = Math.min(panelMaxHeight(windowHeight), Math.max(0, windowHeight - rootPad));
   const basketHeight = basketBar && !basketBar.classList.contains("hidden") ? basketBar.offsetHeight : 0;
@@ -2316,15 +2404,15 @@ function fitOpenChipList() {
     if (expanded) expanded.style.flexShrink = "0";
   }
 
-  const snapped = chipViewportHeight(rowHeights, CHIP_ROW_GAP, budget);
-  const contentHeight = chipViewportHeight(rowHeights, CHIP_ROW_GAP, Number.POSITIVE_INFINITY);
-  if (snapped >= contentHeight) {
-    chips.style.height = "";
-    chips.style.maxHeight = `${contentHeight}px`;
-  } else {
-    chips.style.height = `${snapped}px`;
-    chips.style.maxHeight = `${snapped}px`;
+  const lock = chipScrollerLock(rowHeights, CHIP_ROW_GAP, budget);
+  if (!lock) {
+    releaseChipLock(chips);
+    if (drugSidebar) drugSidebar.style.maxHeight = sidebarMax;
+    card.style.maxHeight = cardMax;
+    return;
   }
+  chips.style.height = lock.height == null ? "" : `${lock.height}px`;
+  chips.style.maxHeight = `${lock.maxHeight}px`;
 
   if (drugSidebar) drugSidebar.style.maxHeight = sidebarMax;
   card.style.maxHeight = cardMax;
