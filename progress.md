@@ -1,5 +1,116 @@
 # Progress
 
+## 2026-11-06 — Prepare production release 0.3.0
+
+- Release branch fast-forwards `master` (`0e639fa`, v0.2.0) to current `uat` (`be5bebf`, PRs #7–#18). Nothing is merged to `master`, and no release tag is created.
+- Version `0.3.0` is set in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` (the `pharmabuddy-tauri` package only), `package.json`, and `package-lock.json`. The release workflow still reads the version from `tauri.conf.json` and would tag `v0.3.0` only after a merge to `master`.
+- Supabase `cache-catalog-entry` (v7) and `get-ai-recommendation` (v44) are already deployed. This change does not deploy them again.
+
+## 2026-11-05 — Side-effect chips show as soon as the scanned card opens
+
+- A scan paints the card while the sidebar is still `display: none`. The chip fit measured every row as 0px, wrote `max-height: 0`, and packed every effect into one row. After the panel opened, that lock stayed, so «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» had an empty gap. Clicking «💡 πρόταση» rendered again with the panel visible, which is why the chips appeared only then.
+- The fit now leaves the height alone when the rows cannot be measured. Opening the sidebar measures them for real and snaps to whole rows. A catalog excerpt that already has chips is still shown without waiting for the recommendation.
+- With two or more products, the open list still gives up height so the collapsed row fits, and the clip still lands on a row edge.
+
+## 2026-11-05 — Chip rows stay whole when another product is in the basket
+
+- With two or more products, the open chip list gives up height so the collapsed row underneath still fits in the window. A single product keeps the previous cap.
+- The chip scroller’s height is an exact number of rows, and each row snaps. The clip lands on a row edge, so a chip is not cut through the middle.
+- The title, the «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» label, and «ⓘ Τελική απόφαση: φαρμακοποιός» stay outside the scroller. A new scan still opens first, and the basket still stays until the pharmacist clears it.
+
+## 2026-11-05 — Chip list scrolls, and the basket stays until the pharmacist clears it
+
+- A long side-effect list no longer grows the open card off the screen. Only the chips under «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» scroll, and that area has a max height. The product title and «ⓘ Τελική απόφαση: φαρμακοποιός» stay on the card. The label stays above the chips.
+- The panel still grows downward from the orb. When several products are open, the collapsed rows are still the part that scrolls. The orb is not clipped.
+- The two-minute idle timer no longer clears the basket. Scanned products stay until «+ Νέος πελάτης» or the close control.
+- A new barcode is inserted first and becomes the open card. The card that was open, including one with a local «💡» rule, collapses underneath.
+- The open card’s title, suggestion, and chips are read from that drug only. The two-product preview had given ZIRCOS the NUROFEN excerpt, which made the screenshot look like a bleed.
+
+## 2026-11-05 — Side-effect chips from the full SmPC list
+
+- The eight reported barcodes already store a Galinos excerpt of about 200 characters that ends in «...». The card treated that string as finished. The chip parser drops the safety-profile heading and the frequency legend, so ZIRCOS, ASPIRIN, XANAX, PANADOL, NUROFEN, and LIPITOR had no chips and showed «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.» AUGMENTIN's teaser names διάρροια, ναυτία, and έμετος. DEPON's teaser names the rash only after «με».
+- A scan whose excerpt is that teaser, or yields no chips, asks the desktop app for section 4.8. The lookup uses the barcode's own SmPC page, and the page title must contain the product's brand token, so a ZIRCOS page is not used for Augmentin. The stored line is a frequency list such as «Συχνές: κεφαλαλγία, ζάλη, …». The card still says only «ⓘ Τελική απόφαση: φαρμακοποιός».
+- The chip parser keeps an effect that sits after «με», drops a sentence fragment such as «γαστρεντερικής φύσης», and does not treat «αναλγητικά» as πόνος.
+- Catalog rows were not edited. `cache-catalog-entry` and `get-ai-recommendation` are updated in the repo and are not deployed. Until they are, each scan of a teaser fetches section 4.8 again. After deploy, a longer excerpt can replace the teaser, and the lookup can return up to 4000 characters. The model prompt still sees 500.
+
+## 2026-10-30 — Basket grows downward from the orb
+
+- The panel shares the orb's top edge and only grows downward. The window top stays put, and the height and position are clamped to the monitor work area so the window never crosses the top of the screen.
+- The newest product is inserted first and opens under the «Πελάτης» bar. Older products sit below it, collapsed.
+- The panel's max height is the window height minus 16px. When that is not enough, only the collapsed rows scroll. The customer bar and the open card stay on screen, and the orb is not clipped.
+- A ResizeObserver measures the basket again when the suggestion, the chips, or the open card change size.
+- The suggestion box keeps a fixed two-line height, so «Αναμονή πρότασης…» and the loaded sentence occupy the same space.
+
+## 2026-10-30 — Basket tags, the open card, and the orb glow
+
+- A collapsed row shows the cyan «💡» when the card has a suggestion, from the AI text or a local ATC rule. While that answer is still loading it shows the grey «💡 Δες πρόταση». «Χωρίς πρόταση» appears only after an answer that has nothing to offer.
+- LIPITOR was missed because the catalog stores `C10AA05` in the ingredient field and a price in the ATC field, and the brand name was not in the rule. The rule now reads an ATC code from either field and knows the Lipitor name.
+- A basket of two or more products keeps the first card open instead of collapsing every row.
+- The «Πελάτης» title and «+ Νέος πελάτης» sit on the same dark surface as the cards.
+- The orb is 10% smaller (144px), and the dock keeps 12px above it, so the thinking ring and glow stay inside the window. The glass plate no longer sits 4px above the dock.
+
+## 2026-10-30 — Filler chips and a short suggestion
+
+- PANADOL ACTIFAST stores a 200-character excerpt that never names an effect. It ends in the connector «Αντίστοιχα», which was showing up as a chip. Connector and reference words are dropped, and a chip is kept only when it contains a real effect term such as ναυτία or εξάνθημα. If nothing remains, the card shows «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.»
+- A suggestion that runs past about two lines or 110 characters is cut on a whole word and ends with «…». The line is not sliced in the middle.
+- The recommendation function source in the repo matches the already deployed version. This change does not deploy it.
+
+## 2026-10-30 — Shorter tags on collapsed basket rows
+
+- A collapsed row shows «💡» instead of «💡 Πρόταση». Hover and the accessible name say «Πρόταση».
+- The side-effect count on that row is «N παρεν.» The full «N παρενέργειες» stays on hover.
+- The name still stays on one line and ends with «…» only when it does not fit. «Atorvastatin 20mg» fits at the current sidebar width.
+
+## 2026-10-30 — Basket row names and the cyan bar
+
+- A collapsed product name stays on one line and ends with «…» when it does not fit. The tags stay on the right.
+- The cyan left bar is only on the open card. Collapsed rows are the same, including the newest scan.
+
+## 2026-10-30 — Approved scan card and customer basket
+
+- A scanned product opens as one card: name, form and time, side-effect chips, and «ⓘ Τελική απόφαση: φαρμακοποιός». The card does not name a data source.
+- Side effects are short chips. Headings, frequency labels such as «Συχνές», organ-system lines, and cut-off words are dropped. A long phrase keeps only the words before «του/της/…». If nothing usable remains, the card shows «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.» in grey italic.
+- Products for the same customer stack in one list. One card is open. The others are rows tagged «💡 Πρόταση», «N παρενέργειες», or «Χωρίς πρόταση». «+ Νέος πελάτης» clears the list, and so does about two minutes without a scan or a click.
+- «💡 Πρόταση» is decided on the device from the ATC rules already used by the recommendation (J01 antibiotic, C10 statin, A02 acid-reducer, A10 diabetes). Scanning does not call `get-ai-recommendation`. That call still happens only when the pharmacist opens a product.
+- No edge function deploy and no database change.
+
+## 2026-10-30 — Aspirin side-effect heading and opaque scan card
+
+- The «Παρενέργειες» bullets no longer use the SmPC heading «Περίληψη του προφίλ ασφαλείας» (or «ασφάλειας»), «Κατάλογος ανεπιθύμητων ενεργειών», frequency labels, or table-header fragments. A cut-off Galinos fragment such as `περιε...` is dropped.
+- The public aspirin excerpt (barcode 2800416704022) has no named effects, so the card shows «Συγκεκριμένες παρενέργειες δεν είναι διαθέσιμες.» instead of «Περίληψη του προφίλ ασφαλείας Οι».
+- A bullet that is too long for one line is shortened on a whole word and ends with «…».
+- The medicine title and the side-effect / recommendation cards use solid backgrounds. The window around the orb stays transparent.
+- No edge function deploy and no database change.
+
+## 2026-10-30 — Login window and honest connection errors
+
+- The login window is 380×460 and cannot shrink below that while the form is open. The form is centered so the title and «Είσοδος» stay on screen without a large empty area under the button.
+- The form has 24px edge padding, the 48px orb above the title, 16px between fields, and «Είσοδος» directly under the password block. The error line no longer reserves four blank lines.
+- Errors show after «Είσοδος», with a small icon and 12px above the button. Offline copy is only for a device that is actually offline. Missing or invalid Supabase settings use the config sentence. DNS, TLS, timeout, and other reachability failures say «Δοκιμάστε ξανά σε λίγο.» The raw error goes to the app log.
+- «Ξέχασα τον κωδικό» shows the contact sentence in muted cyan with an info icon. There is no email reset.
+- Preview states: `login-server`, `login-config`, `login-forgot`, plus the existing login states.
+
+## 2026-10-09 — Typed drug name no longer reuses the previous scan
+
+- Typing a name after a scan (for example «zircos» after Augmentin) used to keep that scan’s barcode. Side effects were loaded from the barcode, so the new card showed Augmentin’s bullets, and the same barcode was sent to the catalog and the recommendation.
+- A typed name is looked up by that name. If nothing matches, the card says «Δεν βρέθηκαν πληροφορίες για αυτό το φάρμακο» with no bullets and no trust line.
+- A typed name is not written onto another product’s catalog row. Name-search results are not saved under a barcode. A session cache that already has a different name for that barcode is left as it is.
+- Scanned medicines still stack in scan order. The newest card keeps a cyan bar on the left of its name so it stays obvious. Replacing the previous card was not added.
+- No migration was run and Supabase was not changed. If a manual name was inserted under a scanned barcode before this fix, review the SQL in the pull request. Do not run it as an update.
+
+## 2026-10-09 — Recommendation sentences and a lighter trust line
+
+- The recommendation no longer clips mid-word. The sidebar shows the first two whole sentences when they fit in three lines, otherwise the last complete sentence that fits. Longer text gets «+ περισσότερα», which expands in place. Old long answers are handled on the client.
+- `get-ai-recommendation` now asks for at most two sentences and about 160 characters. The function is changed in the repo only and is not deployed.
+- The trust line stays 13px and uses `#c9d6e4`, still muted and above 4.5:1 on the panel.
+
+## 2026-10-09 — Side-effect bullets in the scan sidebar
+
+- The sidebar turns the stored side-effect excerpt into short one-line bullets (one effect each, common first, then serious). At most five show; the rest sit behind «+ ακόμη N» (32px), which expands in place.
+- The Galinos name, link, and «Απόσπασμα ΠΧΠ» line are gone from the pharmacist UI. Under the bullets: «Βοηθητικές πληροφορίες. Η τελική απόφαση ανήκει στον φαρμακοποιό.»
+- Medicine name is 22px/600. Bullets and the recommendation are 18px/26px. The section label is 14px/600 without uppercase. The trust line is 13px. The column is 360px (max 400). Side effects grow up to 260px and the recommendation up to 220px, clamped to three lines, with no inner scrollbar. The sidebar window is 648px wide and grows with the content.
+- Existing catalog text is split on the client. No edge function changed, and nothing was deployed. The recommendation prompt can still mention one effect.
+
 ## 2026-10-09 — First signed release (v0.2.0)
 
 - `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` is the minisign public key. The placeholder is gone.

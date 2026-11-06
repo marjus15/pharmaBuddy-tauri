@@ -1,10 +1,43 @@
 import {
+  FORGOT_PASSWORD_MESSAGE,
   INACTIVE_PHARMACY_MESSAGE,
+  LOGIN_CONFIG_MESSAGE,
+  LOGIN_OFFLINE_MESSAGE,
+  LOGIN_SERVER_MESSAGE,
+  MANUAL_ENTRY_BARCODE,
+  MANUAL_NAME_NOT_FOUND_MESSAGE,
   OFFLINE_MESSAGE,
+  SIDE_EFFECTS_FALLBACK,
+  SIDE_EFFECTS_TRUST_LINE,
   UNASSIGNED_PHARMACY_MESSAGE,
   UPDATE_NOTE,
+  barcodeForManualName,
+  basketCountLabel,
+  basketExpandedId,
+  basketSuggestionKind,
+  cardFacts,
+  cardMetaLine,
+  chipFitWindowHeight,
+  chipScrollerLock,
+  chipViewportHeight,
+  chooseExpandedId,
+  clampWindowToWorkArea,
+  collapsedSideEffectCountLabel,
+  dosageFormLabel,
+  formatScanClock,
+  latestDrugId,
+  openCardAfterScan,
+  panelMaxHeight,
+  sharedChipBudget,
+  soloChipBudget,
+  loginErrorOnStartup,
+  loginFailureMessage,
   reduceUpdateUi,
   reportStatusFor,
+  excerptNeedsRicherSource,
+  sideEffectBullets,
+  sideEffectCountLabel,
+  visibleRecommendation,
 } from "./widget-logic.mjs";
 
 const tauri = window.__TAURI__;
@@ -17,17 +50,17 @@ const listen = tauri?.event?.listen
   ? tauri.event.listen.bind(tauri.event)
   : async () => () => {};
 const LogicalSize = tauri?.window?.LogicalSize;
+const LogicalPosition = tauri?.window?.LogicalPosition;
 const WINDOW = tauri?.window?.getCurrentWindow ? tauri.window.getCurrentWindow() : null;
 
-// "sidebar" width is fixed on purpose (orb 250 + gap 12 + sidebar column 200 + app padding).
-// Bubbles inside the sidebar are capped at 100% of that fixed column (see style.css),
-// so the window never needs to be measured/resized based on text content — this avoids
-// the previous bug where long drug names got clipped past the left edge of the window.
+// Sidebar column is 360px (CSS max 400). Width stays fixed so long names wrap
+// inside the column instead of pushing the window: padding 24 + sidebar 360 + gap 14 + orb 250.
+const SIDEBAR_WINDOW_MAX_WIDTH = 688;
 const SIZES = {
   collapsed: { width: 250, height: 288 },
   collapsedNote: { width: 336, height: 324 },
-  login: { width: 300, height: 400 },
-  sidebar: { width: 500, height: 320 },
+  login: { width: 380, height: 460 },
+  sidebar: { width: 648, height: 320 },
   report: { width: 340, height: 460 },
 };
 
@@ -39,6 +72,7 @@ const $ = (id) => document.getElementById(id);
 
 const orb = $("orb");
 const drugSidebar = $("drug-sidebar");
+const basketBar = $("basket-bar");
 const drugList = $("drug-list");
 const manualEntryRow = $("manual-entry-row");
 const manualNameInput = $("manual-name-input");
@@ -59,6 +93,10 @@ const loginIdentifier = $("login-identifier");
 const loginPassword = $("login-password");
 const loginPasswordToggle = $("login-password-toggle");
 const loginError = $("login-error");
+const loginErrorText = $("login-error-text");
+const loginForgot = $("login-forgot");
+const loginForgotNote = $("login-forgot-note");
+const loginForgotText = $("login-forgot-text");
 const loginSubmit = $("login-submit");
 const settingsButton = $("orb-settings-btn");
 const settingsMenu = $("settings-menu");
@@ -93,11 +131,11 @@ const BAD_CREDENTIALS_MESSAGE = "Λάθος στοιχεία";
 const REPORT_EXAMPLE =
   "Σκάναρα το ίδιο κουτί δύο φορές και έβγαλε ότι το προϊόν δεν υπάρχει. Ο κωδικός στο κουτί φαίνεται σωστός.";
 
-const MANUAL_ENTRY_BARCODE = "manual-entry";
-
-/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,sideEffects:string|null,sideEffectsStatus:string,recommendation:string|null,errorMessage:string|null,status:string}>} */
+/** @type {Array<{id:string,barcode:string,found:boolean,productName:string,activeIngredient:string,atcCode:string,sideEffects:string|null,sideEffectsStatus:string,manualEntry?:boolean,recommendation:string|null,errorMessage:string|null,status:string}>} */
 let scannedDrugs = [];
 let activeDrugId = null;
+let expandedDrugId = null;
+let userPinnedExpansion = false;
 let sidebarOpen = false;
 let processing = false;
 let lookupInFlight = false;
@@ -132,25 +170,50 @@ const LICENSE_INACTIVE_MESSAGE =
 const LICENSE_RECONNECT_MESSAGE =
   "Απαιτείται σύνδεση στο διαδίκτυο για επαλήθευση της άδειας.";
 
+function loginIsOpen() {
+  return Boolean(loginOverlay && !loginOverlay.classList.contains("hidden"));
+}
+
 function showLoginError(message) {
   if (!loginError) return;
-  loginError.textContent = message;
+  if (loginErrorText) loginErrorText.textContent = message;
+  else loginError.textContent = message;
   loginError.classList.remove("hidden");
 }
 
 function clearLoginError() {
   if (!loginError) return;
-  loginError.textContent = "";
+  if (loginErrorText) loginErrorText.textContent = "";
   loginError.classList.add("hidden");
+}
+
+function showForgotPasswordNote() {
+  if (!loginForgotNote) return;
+  if (loginForgotText) loginForgotText.textContent = FORGOT_PASSWORD_MESSAGE;
+  else loginForgotNote.textContent = FORGOT_PASSWORD_MESSAGE;
+  loginForgotNote.classList.remove("hidden");
+}
+
+function clearForgotPasswordNote() {
+  if (!loginForgotNote) return;
+  if (loginForgotText) loginForgotText.textContent = "";
+  loginForgotNote.classList.add("hidden");
+}
+
+function logClient(message) {
+  let line = String(message || "").slice(0, 500);
+  const password = loginPassword?.value || "";
+  if (password.length >= 3) line = line.split(password).join("[redacted]");
+  console.warn(line);
+  if (!tauri?.core?.invoke) return;
+  void invoke("client_log", { message: line }).catch(() => {});
 }
 
 function showLoginOverlay() {
   if (!loginOverlay) return;
   loginOverlay.classList.remove("hidden");
   loginOverlay.setAttribute("aria-hidden", "false");
-  if (WINDOW && LogicalSize) {
-    WINDOW.setSize(new LogicalSize(SIZES.login.width, SIZES.login.height)).catch(() => {});
-  }
+  void resizeWindow("login");
 }
 
 function hideLoginOverlay() {
@@ -158,6 +221,7 @@ function hideLoginOverlay() {
   loginOverlay.classList.add("hidden");
   loginOverlay.setAttribute("aria-hidden", "true");
   clearLoginError();
+  clearForgotPasswordNote();
   if (loginPassword) loginPassword.value = "";
   if (loginPassword) loginPassword.type = "password";
   loginPasswordToggle?.classList.remove("is-visible");
@@ -223,7 +287,8 @@ function applyAuthGate(gate) {
   setSettingsVisible(false);
   updatePharmacyFooter(null);
   showLoginOverlay();
-  if (gate?.error_message) showLoginError(gate.error_message);
+  const startupError = loginErrorOnStartup(gate);
+  if (startupError) showLoginError(startupError);
   else clearLoginError();
 }
 
@@ -239,6 +304,11 @@ async function submitLogin(event) {
     return;
   }
   clearLoginError();
+  if (navigator.onLine === false) {
+    logClient("[Auth] Login blocked: navigator.onLine is false");
+    showLoginError(LOGIN_OFFLINE_MESSAGE);
+    return;
+  }
   loginPending = true;
   loginSubmit.disabled = true;
   loginSubmit.textContent = "Σύνδεση…";
@@ -248,7 +318,8 @@ async function submitLogin(event) {
     if (!gate?.scans_enabled && gate?.error_message) showLoginError(gate.error_message);
   } catch (err) {
     const text = String(err ?? "");
-    showLoginError(text.toLowerCase().includes("network") ? OFFLINE_MESSAGE : text || OFFLINE_MESSAGE);
+    logClient(`[Auth] Login invoke failed: ${text}`);
+    showLoginError(loginFailureMessage({ online: navigator.onLine, errorText: text }));
   } finally {
     loginPending = false;
     loginSubmit.disabled = false;
@@ -268,6 +339,9 @@ function setupLogin() {
     loginPasswordToggle.classList.toggle("is-visible", show);
     loginPasswordToggle.setAttribute("aria-pressed", show ? "true" : "false");
     loginPasswordToggle.setAttribute("aria-label", show ? "Απόκρυψη κωδικού" : "Εμφάνιση κωδικού");
+  });
+  loginForgot?.addEventListener("click", () => {
+    showForgotPasswordNote();
   });
 }
 
@@ -324,7 +398,12 @@ function showUpdateNote(message) {
   updateNote.textContent = message || UPDATE_NOTE;
   updateNote.classList.remove("hidden");
   orbDock?.classList.add("has-update-note");
-  if (!sidebarOpen && reportOverlay?.classList.contains("hidden") && logoutConfirm?.classList.contains("hidden")) {
+  if (
+    !loginIsOpen() &&
+    !sidebarOpen &&
+    reportOverlay?.classList.contains("hidden") &&
+    logoutConfirm?.classList.contains("hidden")
+  ) {
     resizeWindow("collapsedNote");
   }
 }
@@ -509,11 +588,35 @@ function browserPreview() {
   return params;
 }
 
+function showPreviewDrugs(drugs) {
+  scannedDrugs = drugs;
+  activeDrugId =
+    drugs.find((drug) => drug.status === "done" || drug.status === "error")?.id || null;
+  expandedDrugId = drugs[0]?.id || null;
+  userPinnedExpansion = Boolean(expandedDrugId);
+  sidebarOpen = true;
+  drugSidebar.classList.remove("hidden");
+  drugSidebar.classList.add("visible");
+  const pharmacy = document.body.dataset.previewPharmacy || "";
+  if (pharmacy) updatePharmacyFooter(pharmacy);
+  renderDrugList();
+  setOrbState("idle");
+}
+
+function scrollPreviewChips(params) {
+  if (params.get("scroll") !== "end") return;
+  setTimeout(() => {
+    const scroller = document.querySelector(".drug-item.is-expanded .side-effect-chips");
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }, 50);
+}
+
 function renderPreview(params) {
   document.body.classList.add("preview-stage");
   const state = params.get("preview");
   const email = params.get("email") || "pilot@farmakeio.gr";
   const pharmacy = params.get("pharmacy") || "Φαρμακείο Παπαδόπουλος";
+  document.body.dataset.previewPharmacy = pharmacy;
   hideActivationOverlay();
   hideLoginOverlay();
   setSettingsVisible(false);
@@ -521,22 +624,32 @@ function renderPreview(params) {
   scansEnabled = false;
   authMode = "test";
 
-  if (
-    state === "login" ||
-    state === "login-error" ||
-    state === "login-inactive" ||
-    state === "login-unassigned" ||
-    state === "login-offline" ||
-    state === "login-loading"
-  ) {
+  const loginStates = new Set([
+    "login",
+    "login-error",
+    "login-inactive",
+    "login-unassigned",
+    "login-offline",
+    "login-server",
+    "login-config",
+    "login-forgot",
+    "login-loading",
+  ]);
+  document.documentElement.classList.toggle("preview-login", loginStates.has(state));
+
+  if (loginStates.has(state)) {
     authMode = "login";
     if (loginIdentifier) loginIdentifier.value = email;
-    if (loginPassword && state !== "login") loginPassword.value = "secret-password";
+    const attempt = state !== "login" && state !== "login-forgot";
+    if (loginPassword && attempt) loginPassword.value = "secret-password";
     showLoginOverlay();
     if (state === "login-error") showLoginError(BAD_CREDENTIALS_MESSAGE);
     if (state === "login-inactive") showLoginError(INACTIVE_PHARMACY_MESSAGE);
     if (state === "login-unassigned") showLoginError(UNASSIGNED_PHARMACY_MESSAGE);
-    if (state === "login-offline") showLoginError(OFFLINE_MESSAGE);
+    if (state === "login-offline") showLoginError(LOGIN_OFFLINE_MESSAGE);
+    if (state === "login-server") showLoginError(LOGIN_SERVER_MESSAGE);
+    if (state === "login-config") showLoginError(LOGIN_CONFIG_MESSAGE);
+    if (state === "login-forgot") showForgotPasswordNote();
     if (state === "login-loading" && loginSubmit) {
       loginPending = true;
       loginSubmit.disabled = true;
@@ -585,6 +698,423 @@ function renderPreview(params) {
     return;
   }
 
+  if (state === "orb-thinking") {
+    setOrbState("thinking");
+    return;
+  }
+
+  const stackMatch = /^basket-(\d+)-(loading|loaded)$/.exec(state || "");
+  if (stackMatch) {
+    const count = Number(stackMatch[1]);
+    const mode = stackMatch[2];
+    const at = (hours, minutes) => new Date(2026, 9, 30, hours, minutes).toISOString();
+    const emptyExcerpt =
+      "Περίληψη του προφίλ ασφαλείας Οι καταγραφόμενες ανεπιθύμητες ενέργειες βασίζονται σε αυθόρμητες αναφορές μετά την κυκλοφορία του φαρμάκου.";
+    const catalog = [
+      ["aspirin", "ASPIRIN TAB", "2800416704022", "Acetylsalicylic acid", "B01AC06"],
+      ["xanax", "XANAX TABLET 0,25MG/TAB BT x 30", "2800000000001", "Alprazolam", "N05BA12"],
+      ["nurofen", "NUROFEN EXPRESS C.TAB", "2800000000002", "Ibuprofen", "M01AE01"],
+      ["panadol", "PANADOL ACTIFAST F.C.TAB", "2801891515011", "N02BE01", "2,65"],
+      ["lipitor", "LIPITOR F.C.TAB", "2802342802025", "C10AA05", "4,84"],
+      ["depon", "DEPON 500mg", "2800000000006", "Paracetamol", "N02BE01"],
+    ];
+    showPreviewDrugs(catalog.slice(0, count).map((item, index) => ({
+      id: `${mode}-${item[0]}`,
+      barcode: item[2],
+      found: true,
+      productName: item[1],
+      activeIngredient: item[3],
+      atcCode: item[4],
+      sideEffects: emptyExcerpt,
+      sideEffectsStatus: "done",
+      scannedAt: at(16, Math.max(0, 47 - index)),
+      recommendation: mode === "loaded" && index === 0
+        ? "Μαζί με το Aspirin, μια αναβράζουσα βιταμίνη C για το κρυολόγημα."
+        : null,
+      errorMessage: null,
+      status: index === 0 ? (mode === "loading" ? "loading" : "done") : "idle",
+    })));
+    return;
+  }
+
+  if (state === "zircos-scan") {
+    const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
+    const drug = {
+      id: "zircos-scan",
+      barcode: "2803151602011",
+      found: true,
+      productName: "ZIRCOS F.C.TAB",
+      formLabel: "Επικαλ. δισκία",
+      activeIngredient: "Rosuvastatin",
+      atcCode: "C10AA07",
+      sideEffects:
+        "Συχνές: Σακχαρώδης διαβήτης, Κεφαλαλγία, Ζάλη, Δυσκοιλιότητα, Ναυτία, Κοιλιακό άλγος, Μυαλγία, Εξασθένιση. Σπάνιες: Θρομβοπενία, Παγκρεατίτιδα, Ραβδομυόλυση.",
+      sideEffectsStatus: "done",
+      scannedAt: at(16, 3),
+      recommendation: null,
+      errorMessage: null,
+      status: "idle",
+    };
+    scannedDrugs = [drug];
+    activeDrugId = null;
+    expandedDrugId = drug.id;
+    userPinnedExpansion = true;
+    sidebarOpen = false;
+    drugSidebar.classList.add("hidden");
+    drugSidebar.classList.remove("visible");
+    const pharmacy = document.body.dataset.previewPharmacy || "";
+    if (pharmacy) updatePharmacyFooter(pharmacy);
+    renderDrugList();
+    void openSidebar();
+    setOrbState("idle");
+    return;
+  }
+
+  if (state === "spc-zircos" || state === "spc-augmentin" || state === "spc-aspirin" || state === "spc-nurofen" || state === "spc-few") {
+    const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
+    const cards = {
+      "spc-zircos": {
+        id: "spc-zircos",
+        barcode: "2803151602011",
+        productName: "ZIRCOS F.C.TAB 10MG",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Rosuvastatin",
+        atcCode: "C10AA07",
+        sideEffects:
+          "Συχνές: Σακχαρώδης διαβήτης, Κεφαλαλγία, Ζάλη, Δυσκοιλιότητα, Ναυτία, Κοιλιακό άλγος, Μυαλγία, Εξασθένιση. Σπάνιες: Θρομβοπενία, Παγκρεατίτιδα, Ραβδομυόλυση.",
+      },
+      "spc-augmentin": {
+        id: "spc-augmentin",
+        barcode: "2801759904025",
+        productName: "AUGMENTIN F.C.TAB (500+125)MG",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Amoxicillin / Clavulanic acid",
+        atcCode: "J01CR02",
+        sideEffects:
+          "Οι ποιο συχνά αναφερθείσες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία και έμετος. Συχνές: Βλεννογονοδερματική καντιντίαση, Διάρροια, Ναυτία, Έμετος. Σπάνιες: Αναστρέψιμη λευκοπενία, Θρομβοπενία.",
+      },
+      "spc-aspirin": {
+        id: "spc-aspirin",
+        barcode: "2800416704022",
+        productName: "ASPIRIN TAB 100MG",
+        formLabel: "Δισκία",
+        activeIngredient: "Acetylsalicylic acid",
+        atcCode: "B01AC06",
+        sideEffects:
+          "Συχνές: Ζάλη, Δυσπεψία, Γαστρεντερικό και κοιλιακό άλγος, Γαστρεντερική αιμορραγία, Εξάνθημα, Κνησμός.",
+      },
+      "spc-nurofen": {
+        id: "spc-nurofen",
+        barcode: "2802075013033",
+        productName: "NUROFEN EXPRESS C.TAB",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Ibuprofen",
+        atcCode: "M01AE01",
+        sideEffects:
+          "Συχνές: γαστρεντερική αιμορραγία, ναυτία, έμετος, διάρροια, δυσκοιλιότητα, δυσπεψία, κοιλιακό άλγος, ελκώδης στοματίτιδα, οίδημα, υπέρταση. Όχι συχνές: κνησμός, κνίδωση, ζάλη, αϋπνία, κόπωση, ταχυκαρδία, υπόταση, βρογχόσπασμος, δύσπνοια. Σπάνιες: παγκρεατίτιδα, ηπατίτιδα, εξάνθημα, κεφαλαλγία, θρομβοπενία, ακοκκιοκυτταραιμία, αναφυλαξία, λευκοπενία, κατάθλιψη.",
+      },
+      "spc-few": {
+        id: "spc-few",
+        barcode: "2801891515011",
+        productName: "PANADOL ACTIFAST F.C.TAB",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Paracetamol",
+        atcCode: "N02BE01",
+        sideEffects: "Συχνές: ναυτία, κεφαλαλγία και ζάλη.",
+      },
+    };
+    const card = cards[state];
+    showPreviewDrugs([
+      {
+        ...card,
+        found: true,
+        sideEffectsStatus: "done",
+        scannedAt: at(12, 40),
+        recommendation: null,
+        errorMessage: null,
+        status: "idle",
+      },
+    ]);
+    scrollPreviewChips(params);
+    return;
+  }
+
+  if (state === "chips-pair") {
+    const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
+    showPreviewDrugs([
+      {
+        id: "pair-xanax",
+        barcode: "2801864302013",
+        found: true,
+        productName: "XANAX TABLET 0,25MG/TAB BT x 30",
+        formLabel: "Δισκία",
+        activeIngredient: "Alprazolam",
+        atcCode: "N05BA12",
+        sideEffects:
+          "Συχνές: κατάθλιψη, καταστολή, υπνηλία, αταξία, ζάλη, κεφαλαλγία, ναυτία, έμετος, δυσκοιλιότητα, διάρροια, ξηροστομία, θολή όραση, κόπωση, αϋπνία, σύγχυση, τρόμος, αμνησία, εξάνθημα, κνησμός, δυσπεψία.",
+        sideEffectsStatus: "done",
+        scannedAt: at(15, 50),
+        recommendation: null,
+        errorMessage: null,
+        status: "done",
+      },
+      {
+        id: "pair-zircos",
+        barcode: "2803151602011",
+        found: true,
+        productName: "ZIRCOS F.C.TAB",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Rosuvastatin",
+        atcCode: "C10AA07",
+        sideEffects:
+          "Συχνές: σακχαρώδης διαβήτης, κεφαλαλγία, ζάλη, δυσκοιλιότητα, ναυτία, κοιλιακό άλγος, μυαλγία, εξασθένιση. Όχι συχνές: κνησμός, εξάνθημα, κνίδωση. Σπάνιες: θρομβοπενία, παγκρεατίτιδα, ραβδομυόλυση.",
+        sideEffectsStatus: "done",
+        scannedAt: at(15, 49),
+        recommendation: "Μαζί με το Zircos, μια σημείωση για τη στατίνη.",
+        errorMessage: null,
+        status: "done",
+      },
+    ]);
+    scrollPreviewChips(params);
+    return;
+  }
+
+  if (state === "scan-next") {
+    const at = (hours, minutes) => new Date(2026, 10, 5, hours, minutes).toISOString();
+    showPreviewDrugs([
+      {
+        id: "scan-zircos",
+        barcode: "2803151602011",
+        found: true,
+        productName: "ZIRCOS F.C.TAB 10MG",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Rosuvastatin",
+        atcCode: "C10AA07",
+        sideEffects:
+          "Συχνές: σακχαρώδης διαβήτης, κεφαλαλγία, ζάλη, δυσκοιλιότητα, ναυτία, κοιλιακό άλγος, μυαλγία, εξασθένιση. Όχι συχνές: κνησμός, εξάνθημα, κνίδωση. Σπάνιες: θρομβοπενία, παγκρεατίτιδα, ραβδομυόλυση. Πολύ σπάνιες: ηπατίτιδα, αρθραλγία. Μη γνωστής συχνότητας: κατάθλιψη, βήχας, δύσπνοια, διάρροια.",
+        sideEffectsStatus: "done",
+        scannedAt: at(12, 41),
+        recommendation: null,
+        errorMessage: null,
+        status: "done",
+      },
+      {
+        id: "scan-nurofen",
+        barcode: "2802075013033",
+        found: true,
+        productName: "NUROFEN EXPRESS C.TAB",
+        formLabel: "Επικαλ. δισκία",
+        activeIngredient: "Ibuprofen",
+        atcCode: "M01AE01",
+        sideEffects:
+          "Συχνές: γαστρεντερική αιμορραγία, ναυτία, έμετος, διάρροια, δυσκοιλιότητα, δυσπεψία, κοιλιακό άλγος.",
+        sideEffectsStatus: "done",
+        scannedAt: at(12, 40),
+        recommendation: "Μαζί με το Nurofen, ένα τοπικό τζελ για τον πόνο.",
+        errorMessage: null,
+        status: "done",
+      },
+    ]);
+    return;
+  }
+
+  if (
+    state === "card-effects" ||
+    state === "card-fallback" ||
+    state === "basket" ||
+    state === "panadol" ||
+    state === "basket-pair" ||
+    state === "basket-loading"
+  ) {
+    const at = (hours, minutes) => new Date(2026, 9, 30, hours, minutes).toISOString();
+    const effectsExcerpt =
+      "Οι συχνότερα αναφερόμενες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία, έμετος και καντιντίαση.";
+    const emptyExcerpt =
+      "Περίληψη του προφίλ ασφαλείας Οι καταγραφόμενες ανεπιθύμητες ενέργειες βασίζονται σε αυθόρμητες αναφορές μετά την κυκλοφορία του φαρμάκου.";
+    const augmentinSuggestion =
+      "Ένα προβιοτικό μαζί με την αντιβίωση προστατεύει το έντερο και προλαμβάνει τη διάρροια.";
+    if (state === "card-effects") {
+      showPreviewDrugs([
+        {
+          id: "card-effects",
+          barcode: "5201000000001",
+          found: true,
+          productName: "Augmentin 500+125mg",
+          formLabel: "Επικαλ. δισκία",
+          activeIngredient: "Amoxicillin / Clavulanic acid",
+          atcCode: "J01CR02",
+          sideEffects: effectsExcerpt,
+          sideEffectsStatus: "done",
+          scannedAt: at(15, 6),
+          recommendation: augmentinSuggestion,
+          errorMessage: null,
+          status: "done",
+        },
+      ]);
+      return;
+    }
+    if (state === "panadol") {
+      showPreviewDrugs([
+        {
+          id: "card-panadol",
+          barcode: "2801891515011",
+          found: true,
+          productName: "PANADOL ACTIFAST F.C.TAB",
+          formLabel: "Επικαλ. δισκία",
+          activeIngredient: "Paracetamol",
+          atcCode: "N02BE01",
+          sideEffects:
+            "Οι ανεπιθύμητες ενέργειες από ιστορικά δεδομένα κλινικών μελετών είναι σπάνιες και από μικρό αριθμό ασθενών. Αντίστοιχα, οι ανεπιθύμητες ενέργειες που έχουν αναφερθεί από την εκτενή εμπειρία μετά τ...",
+          sideEffectsStatus: "done",
+          scannedAt: at(15, 56),
+          recommendation: "Μαζί με Panadol, μια αναβράζουσα βιταμίνη C για το κρυολόγημα.",
+          errorMessage: null,
+          status: "done",
+        },
+      ]);
+      return;
+    }
+    if (state === "card-fallback") {
+      showPreviewDrugs([
+        {
+          id: "card-fallback",
+          barcode: "5201000000002",
+          found: true,
+          productName: "Depon Maximum 1g",
+          formLabel: "Αναβράζοντα δισκία",
+          activeIngredient: "Paracetamol",
+          atcCode: "N02BE01",
+          sideEffects: emptyExcerpt,
+          sideEffectsStatus: "done",
+          scannedAt: at(15, 8),
+          recommendation: "Για πυρετό, προτείνετε θερμόμετρο ή ορό ενυδάτωσης.",
+          errorMessage: null,
+          status: "done",
+        },
+      ]);
+      return;
+    }
+    if (state === "basket-pair") {
+      showPreviewDrugs([
+        {
+          id: "pair-panadol",
+          barcode: "2801891515011",
+          found: true,
+          productName: "PANADOL ACTIFAST F.C.TAB",
+          formLabel: "Επικαλ. δισκία",
+          activeIngredient: "N02BE01",
+          atcCode: "2,65",
+          sideEffects: emptyExcerpt,
+          sideEffectsStatus: "done",
+          scannedAt: at(16, 30),
+          recommendation: "Μαζί με το Panadol, μια αναβράζουσα βιταμίνη C για το κρυολόγημα.",
+          errorMessage: null,
+          status: "done",
+        },
+        {
+          id: "pair-lipitor",
+          barcode: "2802342802025",
+          found: true,
+          productName: "LIPITOR F.C.TAB",
+          activeIngredient: "C10AA05",
+          atcCode: "4,84",
+          sideEffects: "μυαλγία και κεφαλαλγία.",
+          sideEffectsStatus: "done",
+          scannedAt: at(16, 31),
+          recommendation: null,
+          errorMessage: null,
+          status: "idle",
+        },
+      ]);
+      expandedDrugId = "pair-panadol";
+      userPinnedExpansion = true;
+      renderDrugList();
+      return;
+    }
+    if (state === "basket-loading") {
+      showPreviewDrugs([
+        {
+          id: "load-panadol",
+          barcode: "2801891515011",
+          found: true,
+          productName: "PANADOL ACTIFAST F.C.TAB",
+          formLabel: "Επικαλ. δισκία",
+          activeIngredient: "Paracetamol",
+          atcCode: "N02BE01",
+          sideEffects: null,
+          sideEffectsStatus: "loading",
+          scannedAt: at(16, 30),
+          recommendation: null,
+          errorMessage: null,
+          status: "loading",
+        },
+        {
+          id: "load-aspirin",
+          barcode: "2800416704022",
+          found: true,
+          productName: "Aspirin 100mg",
+          activeIngredient: "Acetylsalicylic acid",
+          atcCode: "B01AC06",
+          sideEffects: null,
+          sideEffectsStatus: "idle",
+          scannedAt: at(16, 31),
+          recommendation: null,
+          errorMessage: null,
+          status: "idle",
+        },
+      ]);
+      expandedDrugId = "load-panadol";
+      userPinnedExpansion = true;
+      renderDrugList();
+      return;
+    }
+    showPreviewDrugs([
+      {
+        id: "basket-augmentin",
+        barcode: "5201000000001",
+        found: true,
+        productName: "Augmentin 500+125mg",
+        activeIngredient: "Amoxicillin / Clavulanic acid",
+        atcCode: "J01CR02",
+        sideEffects: "διάρροια, ναυτία και έμετος.",
+        sideEffectsStatus: "done",
+        scannedAt: at(15, 6),
+        recommendation: "Ένα προβιοτικό μαζί με την αντιβίωση προστατεύει το έντερο.",
+        errorMessage: null,
+        status: "done",
+      },
+      {
+        id: "basket-statin",
+        barcode: "5201000000003",
+        found: true,
+        productName: "Atorvastatin 20mg",
+        activeIngredient: "Atorvastatin",
+        atcCode: "C10AA05",
+        sideEffects: "μυαλγία και κεφαλαλγία.",
+        sideEffectsStatus: "done",
+        scannedAt: at(15, 7),
+        recommendation: null,
+        errorMessage: null,
+        status: "idle",
+      },
+      {
+        id: "basket-aspirin",
+        barcode: "2800416704022",
+        found: true,
+        productName: "Aspirin 100mg",
+        activeIngredient: "Acetylsalicylic acid",
+        atcCode: "B01AC06",
+        sideEffects: emptyExcerpt,
+        sideEffectsStatus: "done",
+        scannedAt: at(14, 58),
+        recommendation: null,
+        errorMessage: null,
+        status: "idle",
+      },
+    ]);
+    return;
+  }
+
   if (state === "scan-chip") {
     const drug = {
       id: "preview-chip",
@@ -600,6 +1130,78 @@ function renderPreview(params) {
       status: "idle",
     };
     scannedDrugs = [drug];
+    activeDrugId = null;
+    sidebarOpen = true;
+    drugSidebar.classList.remove("hidden");
+    drugSidebar.classList.add("visible");
+    renderDrugList();
+    setOrbState("idle");
+    return;
+  }
+
+  if (state === "side-effects-many" || state === "side-effects-few") {
+    const many = state === "side-effects-many";
+    const drug = {
+      id: many ? "preview-augmentin" : "preview-few",
+      barcode: many ? "5201234567890" : "5200000000002",
+      found: true,
+      productName: many ? "Augmentin" : "Algofren",
+      activeIngredient: many ? "Amoxicillin / Clavulanic acid" : "Ibuprofen",
+      atcCode: many ? "J01CR02" : "M01AE01",
+      sideEffects: many
+        ? "Περίληψη του προφίλ ασφάλειας. Οι συχνότερα αναφερόμενες ανεπιθύμητες ενέργειες είναι διάρροια, ναυτία, έμετος και δερματικό εξάνθημα. Οι ανεπιθύμητες ενέργειες ταξινομούνται κατά συχνότητα ως εξής: πολύ συχνές (≥1/10), συχνές (≥1/100 έως <1/10), όχι συχνές (≥1/1.000 έως <1/100), σπάνιες (≥1/10.000 έως <1/1.000), πολύ σπάνιες (<1/10.000). Λοιμώξεις και παρασιτώσεις Συχνές: καντιντίαση του δέρματος και των βλεννογόνων. Διαταραχές του ανοσοποιητικού συστήματος Σπάνιες: αναφυλαξία, αγγειοοίδημα. Διαταραχές του νευρικού συστήματος Όχι συχνές: κεφαλαλγία, ζάλη. Διαταραχές του γαστρεντερικού συστήματος Πολύ συχνές: διάρροια. Συχνές: ναυτία, έμετος, δυσπεψία, κοιλιακό άλγος. Διαταραχές του ήπατος Όχι συχνές: αύξηση ηπατικών ενζύμων. Σπάνιες: ηπατίτιδα. Διαταραχές του δέρματος Συχνές: κνησμός, κνίδωση."
+        : "Ήπια ναυτία, κεφαλαλγία και ζάλη.",
+      sideEffectsStatus: "done",
+      sideEffectsExpanded: false,
+      recommendation: many
+        ? "Επειδή ξεκινάτε το Augmentin, καλό είναι να συνδυάσουμε ένα προβιοτικό για την εντερική χλωρίδα. Η διάρροια είναι συχνή με αυτή την αγωγή. Το προβιοτικό την περιορίζει στην πράξη. Πάρτε το με ένα ποτήρι νερό, μακριά από το αντιβιοτικό."
+        : null,
+      errorMessage: null,
+      status: many ? "done" : "idle",
+    };
+    scannedDrugs = [drug];
+    activeDrugId = many ? drug.id : null;
+    sidebarOpen = true;
+    drugSidebar.classList.remove("hidden");
+    drugSidebar.classList.add("visible");
+    renderDrugList();
+    setOrbState("idle");
+    return;
+  }
+
+  if (state === "manual-found" || state === "manual-not-found") {
+    const found = state === "manual-found";
+    const augmentin = {
+      id: "preview-augmentin",
+      barcode: "5201234567890",
+      found: true,
+      productName: "AUGMENTIN F.C.TAB",
+      activeIngredient: "Amoxicillin / Clavulanic acid",
+      atcCode: "J01CR02",
+      sideEffects: "διάρροια, ναυτία και έμετος.",
+      sideEffectsStatus: "done",
+      sideEffectsExpanded: false,
+      manualEntry: false,
+      recommendation: null,
+      errorMessage: null,
+      status: "idle",
+    };
+    const typed = {
+      id: found ? "preview-manual-found" : "preview-manual-missing",
+      barcode: MANUAL_ENTRY_BARCODE,
+      found: false,
+      productName: "zircos",
+      activeIngredient: "",
+      atcCode: "",
+      sideEffects: found ? "Συχνές: ζάλη, κεφαλαλγία και κόπωση." : null,
+      sideEffectsStatus: found ? "done" : "empty",
+      sideEffectsExpanded: false,
+      manualEntry: true,
+      recommendation: null,
+      errorMessage: null,
+      status: "idle",
+    };
+    scannedDrugs = [augmentin, typed];
     activeDrugId = null;
     sidebarOpen = true;
     drugSidebar.classList.remove("hidden");
@@ -1100,20 +1702,175 @@ async function waitForLayout() {
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
-async function resizeWindow(sizeKey) {
-  if (!WINDOW || !LogicalSize) return;
-  const size = SIZES[sizeKey];
+async function setWindowMinSize(size) {
+  if (!WINDOW?.setMinSize || !LogicalSize) return;
+  try {
+    if (!size) await WINDOW.setMinSize(null);
+    else await WINDOW.setMinSize(new LogicalSize(size.width, size.height));
+  } catch (err) {
+    console.warn("[Window] min size:", err);
+  }
+}
 
-  if (sizeKey === "collapsed" || sizeKey === "collapsedNote" || sizeKey === "report" || sizeKey === "login") {
-    await WINDOW.setSize(new LogicalSize(size.width, size.height));
+function layoutContentHeight() {
+  const layout = $("main-layout");
+  const collapsed = drugList?.querySelector(".drug-collapsed");
+  const overflow = collapsed
+    ? Math.max(0, collapsed.scrollHeight - collapsed.clientHeight)
+    : 0;
+  return (layout?.scrollHeight ?? 0) + overflow + WINDOW_LAYOUT_PADDING_Y;
+}
+
+function visibleFloorHeight() {
+  const orbHeight = (orbDock?.offsetHeight ?? 0) + WINDOW_LAYOUT_PADDING_Y;
+  const bar = basketBar && !basketBar.classList.contains("hidden") ? basketBar.offsetHeight + 8 : 0;
+  const card = drugList?.querySelector(".drug-item.is-expanded")?.offsetHeight ?? 0;
+  const cardHeight = card > 0 ? bar + card + WINDOW_LAYOUT_PADDING_Y : 0;
+  return Math.max(orbHeight, cardHeight);
+}
+
+async function readWorkArea() {
+  if (!WINDOW?.currentMonitor) return null;
+  try {
+    const monitor = await WINDOW.currentMonitor();
+    const area = monitor?.workArea;
+    const scale = monitor?.scaleFactor || (await WINDOW.scaleFactor?.()) || 1;
+    const rect = area?.size
+      ? {
+          x: area.position?.x || 0,
+          y: area.position?.y || 0,
+          width: area.size.width,
+          height: area.size.height,
+        }
+      : area && Number.isFinite(area.width)
+        ? area
+        : null;
+    if (!rect?.width || !rect?.height) return null;
+    return {
+      x: rect.x / scale,
+      y: rect.y / scale,
+      width: rect.width / scale,
+      height: rect.height / scale,
+    };
+  } catch (err) {
+    console.warn("[Window] work area:", err);
+    return null;
+  }
+}
+
+async function readWindowFrame() {
+  if (!WINDOW?.outerPosition || !WINDOW?.outerSize) return null;
+  try {
+    const [pos, size, scale] = await Promise.all([
+      WINDOW.outerPosition(),
+      WINDOW.outerSize(),
+      WINDOW.scaleFactor?.() ?? 1,
+    ]);
+    const factor = scale || 1;
+    return {
+      x: pos.x / factor,
+      y: pos.y / factor,
+      width: size.width / factor,
+      height: size.height / factor,
+    };
+  } catch (err) {
+    console.warn("[Window] frame:", err);
+    return null;
+  }
+}
+
+let applyingWindow = false;
+
+async function applyWindowBox(width, height, minHeight) {
+  const frame = await readWindowFrame();
+  const workArea = await readWorkArea();
+  let box = {
+    x: frame ? frame.x + frame.width - width : 0,
+    y: frame ? frame.y : 0,
+    width,
+    height,
+  };
+  if (workArea) {
+    box = clampWindowToWorkArea({ ...box, workArea, minHeight });
+  }
+  if (frame && LogicalPosition && WINDOW.setPosition) {
+    const moved = Math.abs(box.x - frame.x) > 1 || Math.abs(box.y - frame.y) > 1;
+    if (moved) await WINDOW.setPosition(new LogicalPosition(Math.round(box.x), Math.round(box.y)));
+  }
+  const sizeChanged = !frame
+    || Math.abs(box.width - frame.width) > 1
+    || Math.abs(box.height - frame.height) > 1;
+  if (sizeChanged) await WINDOW.setSize(new LogicalSize(Math.round(box.width), Math.round(box.height)));
+}
+
+async function resizeWindow(sizeKey) {
+  if (loginIsOpen()) sizeKey = "login";
+  if (!WINDOW || !LogicalSize || applyingWindow) return;
+  const size = SIZES[sizeKey];
+  applyingWindow = true;
+  try {
+    if (sizeKey === "login") {
+      await setWindowMinSize(size);
+      if (!loginIsOpen()) return;
+      await WINDOW.setSize(new LogicalSize(size.width, size.height));
+      return;
+    }
+
+    await setWindowMinSize(null);
+
+    if (sizeKey === "collapsed" || sizeKey === "collapsedNote" || sizeKey === "report") {
+      await applyWindowBox(size.width, size.height, size.height);
+      return;
+    }
+
+    await waitForLayout();
+    const contentHeight = layoutContentHeight();
+    const height = Math.max(size.height, contentHeight);
+    let width = size.width;
+    if (sizeKey === "sidebar") {
+      const contentWidth = ($("main-layout")?.scrollWidth ?? 0) + 24;
+      width = Math.min(SIDEBAR_WINDOW_MAX_WIDTH, Math.max(size.width, contentWidth));
+    }
+    await applyWindowBox(width, height, visibleFloorHeight());
+  } finally {
+    applyingWindow = false;
+    if (sidebarFitDeferred && sidebarOpen) {
+      sidebarFitDeferred = false;
+      const openChips = drugList?.querySelector(".drug-item.is-expanded .side-effect-chips");
+      if (openChips && !chipLockIsPositive(openChips)) fitOpenChipList();
+    }
+  }
+}
+
+let sidebarResizeQueued = false;
+let sidebarFitDeferred = false;
+
+function scheduleSidebarResize() {
+  if (!WINDOW || !sidebarOpen) return;
+  if (applyingWindow || sidebarResizeQueued) {
+    sidebarFitDeferred = true;
     return;
   }
+  sidebarResizeQueued = true;
+  requestAnimationFrame(() => {
+    sidebarResizeQueued = false;
+    if (!sidebarOpen || applyingWindow) {
+      sidebarFitDeferred = true;
+      return;
+    }
+    sidebarFitDeferred = false;
+    fitOpenChipList();
+    void resizeWindow("sidebar");
+  });
+}
 
-  await waitForLayout();
-  const layout = $("main-layout");
-  const contentHeight = (layout?.scrollHeight ?? 0) + WINDOW_LAYOUT_PADDING_Y;
-  const height = Math.max(size.height, contentHeight);
-  await WINDOW.setSize(new LogicalSize(size.width, height));
+function setupLayoutObserver() {
+  if (typeof ResizeObserver !== "function") return;
+  const observer = new ResizeObserver(() => scheduleSidebarResize());
+  if (drugSidebar) observer.observe(drugSidebar);
+  if (drugList) observer.observe(drugList);
+  if (basketBar) observer.observe(basketBar);
+  if (orbDock) observer.observe(orbDock);
 }
 
 async function writeClipboard(text) {
@@ -1157,21 +1914,44 @@ async function openSidebar() {
   void drugSidebar.offsetWidth;
   drugSidebar.classList.add("visible");
   sidebarOpen = true;
+  // The scan renders while this panel is still display:none. Fit again now
+  // that rows have a real width. The orb window is still the collapsed size,
+  // so budget against the screen the sidebar is about to grow into.
+  const room = chipFitWindowHeight(
+    window.innerHeight,
+    window.screen?.availHeight,
+    SIZES.collapsed.height,
+  );
+  fitOpenChipList({ windowHeight: room });
   await resizeWindow("sidebar");
+  const openChips = drugList?.querySelector(".drug-item.is-expanded .side-effect-chips");
+  if (openChips && !chipLockIsPositive(openChips)) fitOpenChipList({ windowHeight: room });
 }
 
 async function collapseSidebar() {
-  drugSidebar.classList.remove("visible");
+  drugSidebar.classList.remove("visible", "has-cards");
   drugSidebar.classList.add("hidden");
   sidebarOpen = false;
   scannedDrugs = [];
   activeDrugId = null;
+  expandedDrugId = null;
+  userPinnedExpansion = false;
   drugList.innerHTML = "";
+  if (basketBar) {
+    basketBar.classList.add("hidden");
+    basketBar.replaceChildren();
+  }
   hideManualEntryRow();
   await resizeWindow(idleSizeKey());
 }
 
+async function startNewCustomer() {
+  await collapseSidebar();
+}
+
 function createDrugEntry(lookupResult, barcode) {
+  const excerpt = lookupResult.side_effects || null;
+  const useful = Boolean(excerpt) && !excerptNeedsRicherSource(excerpt);
   return {
     id: createDrugId(),
     barcode,
@@ -1179,8 +1959,10 @@ function createDrugEntry(lookupResult, barcode) {
     productName: lookupResult.product_name || "",
     activeIngredient: lookupResult.active_ingredient || "",
     atcCode: lookupResult.atc_code || "",
-    sideEffects: lookupResult.side_effects || null,
-    sideEffectsStatus: lookupResult.side_effects ? "done" : "idle",
+    sideEffects: useful ? excerpt : null,
+    sideEffectsStatus: useful ? "done" : excerpt ? "loading" : "idle",
+    sideEffectsFallback: useful ? null : excerpt,
+    scannedAt: new Date().toISOString(),
     recommendation: null,
     errorMessage: null,
     status: "idle",
@@ -1196,142 +1978,517 @@ function highlightDrugRow(drugId) {
   el.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
-function syncDrugItemElement(el, drug) {
-  const btn = el.querySelector(".drug-name-btn");
-  const effectsBlock = el.querySelector(".drug-side-effects");
-  const effectsText = el.querySelector(".side-effects-text");
-  const recBlock = el.querySelector(".drug-recommendation");
-  const recText = el.querySelector(".recommendation-text");
-
-  btn.textContent = shortDisplayName(drug.productName || drug.barcode);
-  btn.title = drug.productName || drug.barcode;
-  btn.disabled = processing && drug.status === "loading";
-  btn.classList.toggle("active", drug.id === activeDrugId);
-  btn.classList.toggle("loading", drug.status === "loading");
-
-  if (drug.sideEffects) {
-    effectsBlock.classList.remove("hidden", "loading");
-    effectsText.textContent = drug.sideEffects;
-  } else if (drug.sideEffectsStatus === "loading") {
-    effectsBlock.classList.remove("hidden");
-    effectsBlock.classList.add("loading");
-    effectsText.textContent = "Αναζήτηση παρενεργειών…";
-  } else {
-    effectsBlock.classList.add("hidden");
-    effectsBlock.classList.remove("loading");
-    effectsText.textContent = "";
-  }
-
-  const isActive = drug.id === activeDrugId;
-
-  if (drug.status === "loading") {
-    recBlock.classList.remove("hidden", "error");
-    recText.textContent = "Αναμονή πρότασης…";
-  } else if (isActive && drug.status === "done" && drug.recommendation) {
-    recBlock.classList.remove("hidden", "error");
-    recText.textContent = drug.recommendation;
-  } else if (isActive && drug.status === "error" && drug.errorMessage) {
-    recBlock.classList.remove("hidden");
-    recBlock.classList.add("error");
-    recText.textContent = drug.errorMessage;
-  } else {
-    recBlock.classList.add("hidden");
-    recBlock.classList.remove("error");
-    recText.textContent = "";
-  }
+function cardTitle(fullName) {
+  const raw = String(fullName ?? "").trim();
+  if (!raw) return "—";
+  if (raw.length <= 42 && !/\b(?:BT|BLISTER|ΣΕ)\b/i.test(raw)) return raw;
+  return shortDisplayName(raw);
 }
 
-function collapseDrugRecommendation(drugId) {
-  if (activeDrugId !== drugId) return;
-  activeDrugId = null;
-  renderDrugList();
-  resizeWindow("sidebar");
+function chipCountFor(drug) {
+  if (!drug?.sideEffects) return 0;
+  return sideEffectBullets(drug.sideEffects).length;
 }
 
-let pendingClickTimer = null;
-let lastClickDrugId = null;
-let lastClickTime = 0;
-const DOUBLE_CLICK_MS = 350;
+function drugMetaText(drug) {
+  const count = scannedDrugs.length;
+  const index = scannedDrugs.findIndex((item) => item.id === drug.id) + 1;
+  return cardMetaLine({
+    formLabel: count > 1 ? "" : drug.formLabel || dosageFormLabel(drug.productName),
+    clock: formatScanClock(drug.scannedAt),
+    index: count > 1 ? index : 0,
+    count,
+  });
+}
 
-function handleDrugNameClick(drugId) {
-  const now = Date.now();
-  const isDouble = drugId === lastClickDrugId && now - lastClickTime < DOUBLE_CLICK_MS;
+const RECOMMENDATION_LINE_PX = 21;
+const RECOMMENDATION_TEXT_WIDTH = 304;
 
-  if (isDouble) {
-    if (pendingClickTimer) {
-      clearTimeout(pendingClickTimer);
-      pendingClickTimer = null;
-    }
-    lastClickDrugId = null;
-    lastClickTime = 0;
-    collapseDrugRecommendation(drugId);
+function recommendationFitsTwoLines(text) {
+  const probe = document.createElement("p");
+  probe.className = "recommendation-text";
+  probe.textContent = text;
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.visibility = "hidden";
+  probe.style.display = "block";
+  probe.style.width = `${RECOMMENDATION_TEXT_WIDTH}px`;
+  probe.style.margin = "0";
+  probe.style.padding = "0";
+  probe.style.fontSize = "15px";
+  probe.style.lineHeight = `${RECOMMENDATION_LINE_PX}px`;
+  probe.style.whiteSpace = "normal";
+  document.body.appendChild(probe);
+  const height = probe.getBoundingClientRect().height;
+  probe.remove();
+  if (height < 1) {
+    const charsPerLine = Math.floor(RECOMMENDATION_TEXT_WIDTH / 8);
+    return text.length <= charsPerLine * 2;
+  }
+  return Math.round(height / RECOMMENDATION_LINE_PX) <= 2;
+}
+
+function makeTag(text, suggestion, options = {}) {
+  const tag = document.createElement("span");
+  const classes = ["drug-tag"];
+  if (suggestion) classes.push("is-suggestion");
+  if (options.pending) classes.push("is-pending");
+  tag.className = classes.join(" ");
+  tag.textContent = text;
+  if (options.title) tag.title = options.title;
+  if (options.label) tag.setAttribute("aria-label", options.label);
+  if (options.role) tag.setAttribute("role", options.role);
+  return tag;
+}
+
+function createCollapsedDrug(drug) {
+  const item = document.createElement("div");
+  item.className = "drug-item is-collapsed";
+  item.dataset.drugId = drug.id;
+
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "drug-row";
+
+  const name = document.createElement("span");
+  name.className = "drug-row-name";
+  name.textContent = cardTitle(drug.productName || drug.barcode);
+  name.title = drug.productName || drug.barcode;
+
+  const tags = document.createElement("span");
+  tags.className = "drug-row-tags";
+  const kind = basketSuggestionKind(drug);
+  if (kind === "ready") {
+    tags.appendChild(
+      makeTag("💡", true, { title: "Πρόταση", label: "Πρόταση", role: "img" }),
+    );
+  } else if (kind === "pending") {
+    tags.appendChild(makeTag("💡 Δες πρόταση", false, { pending: true }));
+  } else {
+    tags.appendChild(makeTag("Χωρίς πρόταση", false));
+  }
+  const chipCount = chipCountFor(drug);
+  const countLabel = collapsedSideEffectCountLabel(chipCount);
+  if (countLabel) {
+    tags.appendChild(makeTag(countLabel, false, { title: sideEffectCountLabel(chipCount) }));
+  }
+
+  const chevron = document.createElement("span");
+  chevron.className = "drug-row-chev";
+  chevron.textContent = "▾";
+  chevron.setAttribute("aria-hidden", "true");
+
+  row.append(name, tags, chevron);
+  row.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void requestRecommendation(drug.id);
+  });
+
+  item.appendChild(row);
+  return item;
+}
+
+function fillSideEffects(effectsBlock, drug) {
+  const label = document.createElement("p");
+  label.className = "side-effects-label";
+  label.textContent = "Συχνές παρενέργειες";
+
+  const effectsText = document.createElement("p");
+  effectsText.className = "side-effects-text is-hidden";
+
+  const chips = document.createElement("div");
+  chips.className = "side-effect-chips is-hidden";
+
+  const missing = drug.manualEntry && drug.sideEffectsStatus === "empty" && !drug.sideEffects;
+  if (missing) {
+    effectsBlock.classList.add("is-missing");
+    effectsText.textContent = MANUAL_NAME_NOT_FOUND_MESSAGE;
+    effectsText.classList.remove("is-hidden");
+    effectsBlock.append(effectsText);
     return;
   }
 
-  lastClickDrugId = drugId;
-  lastClickTime = now;
+  effectsBlock.append(label);
 
-  if (pendingClickTimer) clearTimeout(pendingClickTimer);
-  pendingClickTimer = setTimeout(() => {
-    pendingClickTimer = null;
-    requestRecommendation(drugId);
-  }, DOUBLE_CLICK_MS);
+  if (drug.sideEffectsStatus === "loading" && !drug.sideEffects) {
+    effectsBlock.classList.add("loading");
+    effectsText.textContent = "Αναζήτηση παρενεργειών…";
+    effectsText.classList.add("is-note");
+    effectsText.classList.remove("is-hidden");
+    effectsBlock.append(effectsText);
+    return;
+  }
+
+  const bullets = cardFacts(drug).chips;
+  if (bullets.length) {
+    chips.classList.remove("is-hidden");
+    chips.replaceChildren(
+      ...bullets.map((text) => {
+        const chip = document.createElement("span");
+        chip.className = "side-effect-chip";
+        chip.textContent = text;
+        return chip;
+      }),
+    );
+    effectsBlock.append(chips);
+    return;
+  }
+
+  if (drug.sideEffects || drug.sideEffectsStatus === "empty") {
+    effectsText.textContent = SIDE_EFFECTS_FALLBACK;
+    effectsText.classList.add("is-fallback");
+    effectsText.classList.remove("is-hidden");
+    effectsBlock.append(effectsText);
+    return;
+  }
+
+  effectsBlock.classList.add("is-hidden");
 }
 
-function createDrugItemElement(drug) {
+function fillSuggestion(recBlock, drug) {
+  const show =
+    drug.status === "loading" ||
+    (drug.status === "done" && drug.recommendation) ||
+    (drug.status === "error" && drug.errorMessage);
+  if (!show) {
+    recBlock.classList.add("is-hidden");
+    return;
+  }
+
+  const label = document.createElement("p");
+  label.className = "drug-suggestion-label";
+  label.textContent = "💡 Πρόταση στον πελάτη";
+
+  const recText = document.createElement("p");
+  recText.className = "recommendation-text";
+
+  const recMore = document.createElement("button");
+  recMore.type = "button";
+  recMore.className = "recommendation-more is-hidden";
+  recMore.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const current = findDrugById(drug.id);
+    if (!current) return;
+    current.recommendationExpanded = true;
+    renderDrugList();
+    void resizeWindow("sidebar");
+  });
+
+  if (drug.status === "loading") {
+    recText.textContent = "Αναμονή πρότασης…";
+  } else if (drug.status === "error") {
+    recBlock.classList.add("is-error");
+    recText.textContent = drug.errorMessage;
+  } else {
+    const recommendation = visibleRecommendation(cardFacts(drug).recommendation, {
+      expanded: Boolean(drug.recommendationExpanded),
+      fits: recommendationFitsTwoLines,
+    });
+    recBlock.classList.toggle("is-expanded", Boolean(drug.recommendationExpanded));
+    recText.textContent = recommendation.text;
+    if (recommendation.moreLabel) {
+      recMore.textContent = recommendation.moreLabel;
+      recMore.classList.remove("is-hidden");
+    }
+  }
+
+  recBlock.append(label, recText, recMore);
+}
+
+function createExpandedDrug(drug) {
   const item = document.createElement("div");
-  item.className = "drug-item";
+  item.className = "drug-item is-expanded";
   item.dataset.drugId = drug.id;
+
+  const card = document.createElement("article");
+  card.className = "drug-card";
+  const missing = drug.manualEntry && drug.sideEffectsStatus === "empty" && !drug.sideEffects;
+  if (missing) card.classList.add("is-missing");
+
+  const header = document.createElement("div");
+  header.className = "drug-card-hd";
+
+  const titles = document.createElement("div");
+  titles.className = "drug-card-titles";
 
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "drug-name-btn";
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    handleDrugNameClick(drug.id);
+  const facts = cardFacts(drug);
+  btn.textContent = cardTitle(facts.productName || facts.barcode);
+  btn.title = facts.productName || facts.barcode;
+  btn.disabled = processing && drug.status === "loading";
+  btn.classList.toggle("active", drug.id === activeDrugId);
+  btn.classList.toggle("loading", drug.status === "loading");
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void requestRecommendation(drug.id);
   });
 
-  const effectsBlock = document.createElement("div");
-  effectsBlock.className = "drug-side-effects hidden";
+  const meta = document.createElement("p");
+  meta.className = "drug-meta";
+  meta.textContent = drugMetaText(drug);
+  if (!meta.textContent) meta.classList.add("is-hidden");
 
-  const effectsLabel = document.createElement("p");
-  effectsLabel.className = "side-effects-label";
-  effectsLabel.textContent = "Παρενέργειες";
+  titles.append(btn, meta);
 
-  const effectsText = document.createElement("p");
-  effectsText.className = "side-effects-text";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "drug-card-toggle";
+  const single = scannedDrugs.length < 2;
+  toggle.textContent = single ? "×" : "▴";
+  toggle.setAttribute("aria-label", single ? "Κλείσιμο" : "Σύμπτυξη");
+  toggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (single) {
+      void startNewCustomer();
+      return;
+    }
+    userPinnedExpansion = true;
+    const index = scannedDrugs.findIndex((item) => item.id === drug.id);
+    const next = scannedDrugs[index + 1] || scannedDrugs.find((item) => item.id !== drug.id);
+    expandedDrugId = next?.id || drug.id;
+    renderDrugList();
+    void resizeWindow("sidebar");
+  });
 
-  const effectsSource = document.createElement("p");
-  effectsSource.className = "side-effects-source";
-  effectsSource.textContent = "Απόσπασμα ΠΧΠ · Γαληνός";
-
-  effectsBlock.appendChild(effectsLabel);
-  effectsBlock.appendChild(effectsText);
-  effectsBlock.appendChild(effectsSource);
+  header.append(titles, toggle);
 
   const recBlock = document.createElement("div");
-  recBlock.className = "drug-recommendation hidden";
+  recBlock.className = "drug-suggestion";
+  fillSuggestion(recBlock, drug);
 
-  const recText = document.createElement("p");
-  recText.className = "recommendation-text";
-  recBlock.appendChild(recText);
+  const effectsBlock = document.createElement("div");
+  effectsBlock.className = "drug-side-effects";
+  fillSideEffects(effectsBlock, drug);
 
-  item.appendChild(btn);
-  item.appendChild(effectsBlock);
-  item.appendChild(recBlock);
-  syncDrugItemElement(item, drug);
+  const footer = document.createElement("p");
+  footer.className = "drug-card-ft";
+  footer.textContent = SIDE_EFFECTS_TRUST_LINE;
+
+  card.append(header);
+  if (!recBlock.classList.contains("is-hidden")) card.append(recBlock);
+  if (!effectsBlock.classList.contains("is-hidden")) card.append(effectsBlock);
+  if (!missing) card.append(footer);
+  item.appendChild(card);
   return item;
 }
 
-function renderDrugList() {
-  drugList.innerHTML = "";
-  for (const drug of scannedDrugs) {
-    drugList.appendChild(createDrugItemElement(drug));
+const CHIP_ROW_GAP = 6;
+
+function unwrapChipRows(scroller) {
+  const rows = [...scroller.querySelectorAll(".side-effect-row")];
+  if (rows.length === 0) return;
+  scroller.replaceChildren(...rows.flatMap((row) => [...row.children]));
+}
+
+function layoutChipRows(scroller) {
+  const chips = [...scroller.querySelectorAll(":scope > .side-effect-chip")];
+  if (chips.length === 0) return;
+  const groups = [];
+  for (const chip of chips) {
+    const top = chip.offsetTop;
+    const last = groups[groups.length - 1];
+    if (!last || Math.abs(last.top - top) > 2) groups.push({ top, items: [chip] });
+    else last.items.push(chip);
   }
+  scroller.replaceChildren(
+    ...groups.map((group) => {
+      const row = document.createElement("div");
+      row.className = "side-effect-row";
+      row.append(...group.items);
+      return row;
+    }),
+  );
+}
+
+function verticalBox(el, props) {
+  if (!el) return 0;
+  const style = getComputedStyle(el);
+  return props.reduce((sum, prop) => sum + (parseFloat(style[prop]) || 0), 0);
+}
+
+function chipListCanMeasure(el) {
+  if (!el || typeof el.getClientRects !== "function") return false;
+  if (el.getClientRects().length === 0) return false;
+  return el.getBoundingClientRect().width >= 1;
+}
+
+function releaseChipLock(chips) {
+  unwrapChipRows(chips);
+  chips.style.height = "";
+  chips.style.maxHeight = "";
+  chips.style.flexDirection = "";
+  chips.style.flexWrap = "";
+}
+
+function chipLockIsPositive(chips) {
+  const max = parseFloat(chips?.style?.maxHeight);
+  return Number.isFinite(max) && max > 0;
+}
+
+/** Size the open chip list to whole rows, leaving the collapsed products on screen. */
+function fitOpenChipList(options = {}) {
+  const chips = drugList?.querySelector(".drug-item.is-expanded .side-effect-chips");
+  const collapsed = drugList?.querySelector(".drug-collapsed");
+  const card = chips?.closest(".drug-card");
+  if (collapsed) {
+    collapsed.style.maxHeight = "";
+    collapsed.style.flexShrink = "";
+  }
+  if (!chips || chips.classList.contains("is-hidden") || !card) return;
+
+  // display:none (the closed sidebar) reports every row as 0px tall. Writing
+  // that as max-height hides the chips after the panel opens.
+  if (!chipListCanMeasure(chips)) {
+    releaseChipLock(chips);
+    return;
+  }
+
+  const sidebarMax = drugSidebar?.style.maxHeight ?? "";
+  const cardMax = card.style.maxHeight;
+  if (drugSidebar) drugSidebar.style.maxHeight = "none";
+  card.style.maxHeight = "none";
+  unwrapChipRows(chips);
+  chips.style.maxHeight = "none";
+  chips.style.height = "auto";
+  chips.style.flexDirection = "row";
+  chips.style.flexWrap = "wrap";
+
+  const looseChips = chips.querySelectorAll(":scope > .side-effect-chip").length;
+  if (looseChips === 0) {
+    chips.style.flexDirection = "";
+    chips.style.flexWrap = "";
+    if (drugSidebar) drugSidebar.style.maxHeight = sidebarMax;
+    card.style.maxHeight = cardMax;
+    return;
+  }
+  layoutChipRows(chips);
+  chips.style.flexDirection = "";
+  chips.style.flexWrap = "";
+
+  const rows = [...chips.querySelectorAll(".side-effect-row")];
+  const rowHeights = rows.map((row) => row.offsetHeight);
+  let chrome = verticalBox(card, ["borderTopWidth", "borderBottomWidth"]);
+  for (const child of card.children) {
+    chrome += child.contains(chips) ? child.offsetHeight - chips.offsetHeight : child.offsetHeight;
+  }
+
+  const requested = Number(options.windowHeight);
+  const windowHeight = Number.isFinite(requested) && requested > 0 ? requested : window.innerHeight;
+  const rootPad = verticalBox(document.querySelector(".app-root"), ["paddingTop", "paddingBottom"]);
+  const sidebarRoom = Math.min(panelMaxHeight(windowHeight), Math.max(0, windowHeight - rootPad));
+  const basketHeight = basketBar && !basketBar.classList.contains("hidden") ? basketBar.offsetHeight : 0;
+  const sidebarGap = basketHeight > 0 ? verticalBox(drugSidebar, ["rowGap"]) || 8 : 0;
+  const listGap = collapsed ? verticalBox(drugList, ["rowGap"]) || 8 : 0;
+  const listPad = verticalBox(drugList, ["paddingTop", "paddingBottom"]);
+  const collapsedHeight = collapsed ? collapsed.scrollHeight : 0;
+  const productCount = scannedDrugs.length;
+  const expanded = chips.closest(".drug-item");
+  if (expanded) expanded.style.flexShrink = "";
+
+  let budget = soloChipBudget(windowHeight);
+  if (productCount >= 2 && collapsed) {
+    const occupied = sidebarGap + basketHeight + listPad + listGap + chrome + collapsedHeight;
+    const outside = Math.max(0, panelMaxHeight(windowHeight) - sidebarRoom);
+    const room = sharedChipBudget(windowHeight, occupied + outside);
+    const minChips = chipViewportHeight(rowHeights.slice(0, 1), CHIP_ROW_GAP, Number.POSITIVE_INFINITY);
+    budget = room;
+    if (room < minChips) {
+      budget = minChips;
+      const collapsedRoom = Math.max(0, sidebarRoom - (occupied - collapsedHeight) - minChips);
+      if (collapsedHeight > collapsedRoom) collapsed.style.maxHeight = `${Math.floor(collapsedRoom)}px`;
+    }
+    collapsed.style.flexShrink = "0";
+    if (expanded) expanded.style.flexShrink = "0";
+  }
+
+  const lock = chipScrollerLock(rowHeights, CHIP_ROW_GAP, budget);
+  if (!lock) {
+    releaseChipLock(chips);
+    if (drugSidebar) drugSidebar.style.maxHeight = sidebarMax;
+    card.style.maxHeight = cardMax;
+    return;
+  }
+  chips.style.height = lock.height == null ? "" : `${lock.height}px`;
+  chips.style.maxHeight = `${lock.maxHeight}px`;
+
+  if (drugSidebar) drugSidebar.style.maxHeight = sidebarMax;
+  card.style.maxHeight = cardMax;
+}
+
+function renderBasketBar() {
+  if (!basketBar) return;
+  basketBar.replaceChildren();
+  if (scannedDrugs.length < 2) {
+    basketBar.classList.add("hidden");
+    return;
+  }
+  basketBar.classList.remove("hidden");
+
+  const label = document.createElement("p");
+  label.className = "basket-label";
+  const title = document.createElement("span");
+  title.textContent = "Πελάτης · ";
+  const count = document.createElement("span");
+  count.className = "basket-count";
+  count.textContent = basketCountLabel(scannedDrugs.length);
+  label.append(title, count);
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "basket-new";
+  button.textContent = "+ Νέος πελάτης";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void startNewCustomer();
+  });
+  basketBar.append(label, button);
+}
+
+function renderDrugList() {
+  if (!expandedDrugId || !scannedDrugs.some((drug) => drug.id === expandedDrugId)) {
+    if (!userPinnedExpansion) {
+      expandedDrugId = chooseExpandedId(scannedDrugs, {
+        previousExpandedId: expandedDrugId,
+      });
+    }
+  }
+  if (scannedDrugs.length >= 2) {
+    expandedDrugId = basketExpandedId(scannedDrugs, expandedDrugId);
+  }
+  renderBasketBar();
+  drugSidebar?.classList.toggle("has-cards", scannedDrugs.length > 0);
+  drugList.innerHTML = "";
+  if (scannedDrugs.length === 0) return;
+  const newestId = latestDrugId(scannedDrugs);
+  const open = scannedDrugs.find((drug) => drug.id === expandedDrugId) || scannedDrugs[0];
+  const openEl = createExpandedDrug(open);
+  openEl.classList.toggle("is-latest", open.id === newestId);
+  drugList.appendChild(openEl);
+  const collapsed = scannedDrugs.filter((drug) => drug.id !== open.id);
+  if (collapsed.length === 0) {
+    fitOpenChipList();
+    return;
+  }
+  const scroller = document.createElement("div");
+  scroller.className = "drug-collapsed";
+  for (const drug of collapsed) {
+    const el = createCollapsedDrug(drug);
+    el.classList.toggle("is-latest", drug.id === newestId);
+    scroller.appendChild(el);
+  }
+  drugList.appendChild(scroller);
+  fitOpenChipList();
 }
 
 function appendDrug(drug) {
-  scannedDrugs.push(drug);
+  if (!drug.scannedAt) drug.scannedAt = new Date().toISOString();
+  const previousExpandedId = expandedDrugId;
+  scannedDrugs.unshift(drug);
+  userPinnedExpansion = false;
+  expandedDrugId = openCardAfterScan(scannedDrugs, drug.id, previousExpandedId)?.id || drug.id;
   renderDrugList();
   const el = drugList.querySelector(`[data-drug-id="${drug.id}"]`);
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -1362,6 +2519,9 @@ async function handleLookupResult(lookupResult, barcode) {
 
   const existing = findDrugByBarcode(barcode);
   if (existing) {
+    userPinnedExpansion = true;
+    expandedDrugId = existing.id;
+    renderDrugList();
     void loadSideEffects(existing);
     highlightDrugRow(existing.id);
     setOrbState("success");
@@ -1397,7 +2557,11 @@ function addManualDrugFromInput() {
     return null;
   }
 
-  const barcode = pendingManualBarcode || lastAcceptedBarcode || MANUAL_ENTRY_BARCODE;
+  const barcode = barcodeForManualName({
+    pendingBarcode: pendingManualBarcode,
+    name,
+    drugs: scannedDrugs,
+  });
   const existing = scannedDrugs.find(
     (d) => d.barcode === barcode && d.productName.toLowerCase() === name.toLowerCase(),
   );
@@ -1416,6 +2580,8 @@ function addManualDrugFromInput() {
     atcCode: "",
     sideEffects: null,
     sideEffectsStatus: "idle",
+    manualEntry: true,
+    scannedAt: new Date().toISOString(),
     recommendation: null,
     errorMessage: null,
     status: "idle",
@@ -1437,7 +2603,7 @@ async function openManualEntry() {
     await openSidebar();
   }
 
-  showManualEntryRow(lastAcceptedBarcode || MANUAL_ENTRY_BARCODE, "");
+  showManualEntryRow(MANUAL_ENTRY_BARCODE, "");
   await resizeWindow("sidebar");
 }
 
@@ -1448,24 +2614,40 @@ async function showScanError(errorMessage) {
   console.error("[Scan] Error:", errorMessage);
 }
 
+function applySideEffectFallback(drug) {
+  const fallback = String(drug.sideEffectsFallback || "").trim();
+  if (fallback && sideEffectBullets(fallback).length) {
+    drug.sideEffects = fallback;
+    drug.sideEffectsStatus = "done";
+    return;
+  }
+  drug.sideEffects = null;
+  drug.sideEffectsStatus = "empty";
+}
+
 function loadSideEffects(drug) {
-  if (!drug || drug.sideEffects || drug.sideEffectsStatus === "empty") {
+  if (!drug) return Promise.resolve();
+  if (drug.sideEffects && !excerptNeedsRicherSource(drug.sideEffects)) {
     return Promise.resolve();
   }
+  if (drug.sideEffectsRicherTried) return Promise.resolve();
   if (sideEffectLoads.has(drug.id)) {
     return sideEffectLoads.get(drug.id);
   }
 
+  drug.sideEffectsRicherTried = true;
+  drug.sideEffects = null;
   drug.sideEffectsStatus = "loading";
   renderDrugList();
 
   const job = invoke("fetch_side_effects", {
     barcode: drug.barcode,
     productName: drug.productName || null,
+    nameOnly: drug.manualEntry === true,
   })
     .then(async (result) => {
       const text = String(result?.side_effects || "").trim();
-      if (text) {
+      if (text && sideEffectBullets(text).length) {
         drug.sideEffects = text;
         drug.sideEffectsStatus = "done";
         if (result.active_ingredient && !drug.activeIngredient) {
@@ -1478,12 +2660,12 @@ function loadSideEffects(drug) {
           drug.productName = result.product_name;
         }
       } else {
-        drug.sideEffectsStatus = "empty";
+        applySideEffectFallback(drug);
       }
     })
     .catch((err) => {
       console.warn("[SideEffects] fetch failed:", err);
-      drug.sideEffectsStatus = "empty";
+      applySideEffectFallback(drug);
     })
     .finally(async () => {
       sideEffectLoads.delete(drug.id);
@@ -1501,6 +2683,8 @@ async function requestRecommendation(drugId) {
   const drug = findDrugById(drugId);
   if (!drug) return;
 
+  expandedDrugId = drugId;
+  userPinnedExpansion = true;
   activeDrugId = drugId;
 
   if (drug.status === "done" && drug.recommendation) {
@@ -1519,6 +2703,17 @@ async function requestRecommendation(drugId) {
   setOrbState("thinking");
 
   await loadSideEffects(drug);
+  if (drug.manualEntry && drug.sideEffectsStatus === "empty") {
+    activeDrugId = null;
+    drug.status = "idle";
+    drug.recommendation = null;
+    drug.errorMessage = null;
+    processing = false;
+    setOrbState("idle");
+    renderDrugList();
+    await resizeWindow("sidebar");
+    return;
+  }
   console.log(`[Recommend] barcode=${drug.barcode} product_name="${drug.productName}"`);
 
   try {
@@ -1591,6 +2786,7 @@ async function requestRecommendation(drugId) {
     setTimeout(() => setOrbState("idle"), 650);
   } finally {
     processing = false;
+    if (!findDrugById(drugId) || !sidebarOpen) return;
     renderDrugList();
     await resizeWindow("sidebar");
   }
@@ -1650,8 +2846,11 @@ function setupDrag() {
     if (target.closest("#settings-menu")) return;
     if (target.closest("#report-menu-btn")) return;
     if (target.closest("#logout-btn")) return;
+    if (target.closest(".basket-bar")) return;
     if (target.closest(".drug-name-btn")) return;
-    if (target.closest(".drug-recommendation")) return;
+    if (target.closest(".drug-card-toggle")) return;
+    if (target.closest(".drug-row")) return;
+    if (target.closest(".drug-suggestion")) return;
     if (target.closest(".drug-side-effects")) return;
     if (target.closest(".drug-list")) return;
 
@@ -1736,6 +2935,7 @@ async function init() {
   setupLogin();
   setupSettingsMenu();
   setupReport();
+  setupLayoutObserver();
 
   const preview = browserPreview();
   if (preview) {
@@ -1773,7 +2973,7 @@ async function init() {
   // });
 
   setOrbState("idle");
-  await resizeWindow("collapsed");
+  await resizeWindow(loginIsOpen() ? "login" : "collapsed");
   void startUpdateWatch();
 
   console.log("[pharmaBuddy] Widget ready");

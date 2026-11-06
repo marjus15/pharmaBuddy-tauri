@@ -21,6 +21,14 @@ function isBlank(value: unknown): boolean {
   return cleanText(value).length === 0
 }
 
+/** Galinos public pages cut section 4.8 at about 200 characters and end with «...». */
+function isTruncatedTeaser(value: unknown): boolean {
+  if (typeof value !== "string") return false
+  const text = value.replace(/\s+/g, " ").trim()
+  if (!text || [...text].length > 240) return false
+  return /(?:\.{3}|…)\s*$/u.test(text)
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -37,7 +45,7 @@ Deno.serve(async (req) => {
     const cleanBarcode = String(body.barcode ?? "").trim()
     const cleanName = cleanText(body.product_name, 400)
     const source = cleanText(body.source, 40) || "galinos"
-    const sideEffects = cleanText(body.side_effects)
+    const sideEffects = cleanText(body.side_effects, 4000)
     const activeIngredient = cleanText(body.active_ingredient, 240)
     const atcCode = cleanText(body.atc_code, 16)
 
@@ -81,9 +89,13 @@ Deno.serve(async (req) => {
       const next = { ...meta }
       let changed = false
 
-      if (sideEffects && isBlank(meta.side_effects)) {
+      const storedEffects = typeof meta.side_effects === "string" ? meta.side_effects : ""
+      const replaceEffects = Boolean(sideEffects)
+        && !isTruncatedTeaser(sideEffects)
+        && (isBlank(storedEffects) || isTruncatedTeaser(storedEffects))
+      if (replaceEffects) {
         next.side_effects = sideEffects
-        next.side_effects_source = "galinos_spc"
+        next.side_effects_source = "smpc_4_8"
         changed = true
       }
       if (activeIngredient && isBlank(meta.active_ingredient)) {
@@ -138,8 +150,8 @@ Deno.serve(async (req) => {
         active_ingredient: activeIngredient || "N/A",
         atc_code: atcCode || "N/A",
         source,
-        ...(sideEffects
-          ? { side_effects: sideEffects, side_effects_source: "galinos_spc" }
+        ...(sideEffects && !isTruncatedTeaser(sideEffects)
+          ? { side_effects: sideEffects, side_effects_source: "smpc_4_8" }
           : {}),
       },
     }

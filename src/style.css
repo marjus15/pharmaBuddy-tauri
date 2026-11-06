@@ -35,7 +35,7 @@ body {
   height: 100%;
   overflow: hidden;
   background: transparent;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Segoe UI Variable", "Segoe UI", "Noto Sans", sans-serif;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -55,7 +55,7 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   padding: 8px 12px 12px;
   overflow: visible;
@@ -71,19 +71,17 @@ body {
   width: 100%;
 }
 
-/* ── Drug sidebar (left of orb) — compact chat bubbles ──
-   Shrinks to its content (fit-content) so bubbles sit right next to the
-   orb, but is capped at max-width so long names wrap instead of clipping
-   the window. The row is right-anchored (justify-content: flex-end) so the
-   sidebar always hugs the orb regardless of how narrow the content is. */
+/* ── Drug sidebar (left of orb) ──
+   Fixed 360px column (max 400) so names and bullets wrap inside the panel.
+   The row stays right-anchored and hugs the orb. */
 .drug-sidebar {
   position: relative;
-  width: fit-content;
-  max-width: 210px;
+  width: 360px;
+  max-width: 400px;
   flex-shrink: 0;
   background: transparent;
   border: none;
-  padding: 0 4px 0 0;
+  padding: 0;
   opacity: 0;
   transform: translateX(-6px);
   transition: opacity 0.2s ease-out, transform 0.2s ease-out;
@@ -124,38 +122,114 @@ body {
   background: rgba(30, 40, 50, 0.95);
 }
 
-.drug-list {
+.drug-sidebar.has-cards .sidebar-close-btn {
+  display: none;
+}
+
+/* The panel shares the orb's top edge and grows downward. Past the window
+   minus 16px, only the collapsed rows scroll. */
+.drug-sidebar.has-cards:not(.hidden) {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
+  gap: 8px;
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+}
+
+.basket-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #1d2a31;
+  border-radius: 10px;
+  background: #0e1216;
+  color: #e3eaee;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.basket-bar.hidden {
+  display: none;
+}
+
+.basket-label {
+  margin: 0;
+}
+
+.basket-count {
+  color: #7f939c;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.basket-new {
+  padding: 3px 9px;
+  border: 1px solid #1f5b66;
+  border-radius: 8px;
+  background: transparent;
+  color: #5fb8c9;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.basket-new:hover {
+  background: #0f2a31;
+}
+
+.drug-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   width: 100%;
-  max-height: 340px;
-  overflow-x: hidden;
+  min-height: 0;
+  overflow: hidden;
+  padding: 2px 0;
+}
+
+.drug-item.is-expanded {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.drug-collapsed {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
   overflow-y: auto;
-  padding: 2px 2px 2px 2px;
+  padding-right: 2px;
+  scrollbar-color: #2a4550 transparent;
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 232, 255, 0.4) transparent;
 }
 
-.drug-list::-webkit-scrollbar {
-  width: 4px;
+.drug-collapsed::-webkit-scrollbar {
+  width: 8px;
 }
 
-.drug-list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(0, 168, 216, 0.5);
+.drug-collapsed::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: #2a4550;
 }
 
 .drug-item {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: stretch;
   width: 100%;
 }
 
-.drug-item.highlight .drug-name-btn {
+.drug-item.highlight .drug-card,
+.drug-item.highlight .drug-row {
   animation: drug-highlight 0.8s ease-out;
 }
 
@@ -171,144 +245,337 @@ body {
   }
 }
 
+.drug-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  background: #0e1216;
+  border: 1px solid #1d2a31;
+  border-left: 4px solid #22d3ee;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.drug-card-hd {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #1b252b;
+}
+
+.drug-card-titles {
+  min-width: 0;
+  flex: 1;
+}
+
 .drug-name-btn {
-  display: -webkit-box;
-  width: fit-content;
-  max-width: 100%;
-  padding: 8px 12px;
-  background: rgba(0, 74, 88, 0.95);
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
   border: none;
-  border-radius: 14px;
-  color: #eefaff;
+  background: transparent;
+  color: #f1f6f8;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.2px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.drug-name-btn:hover:not(:disabled) {
+  color: #ffffff;
+}
+
+.drug-name-btn.loading,
+.drug-name-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.drug-meta {
+  margin: 2px 0 0;
+  color: #7f939c;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.drug-card-toggle {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 2px 4px;
+  border: 1px solid #26343b;
+  border-radius: 6px;
+  background: transparent;
+  color: #7f939c;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.drug-card-toggle:hover {
+  color: #e3eaee;
+}
+
+.drug-suggestion {
+  flex-shrink: 0;
+  margin: 12px 14px 0;
+  padding: 10px 12px;
+  background: #0f2a31;
+  border: 1px solid #1f5b66;
+  border-radius: 10px;
+}
+
+.drug-suggestion.is-hidden,
+.drug-side-effects.is-hidden,
+.side-effects-text.is-hidden,
+.side-effect-chips.is-hidden,
+.side-effects-more.is-hidden,
+.recommendation-more.is-hidden,
+.drug-meta.is-hidden {
+  display: none;
+}
+
+.drug-suggestion-label {
+  margin: 0 0 4px;
+  color: #5fe3f5;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.drug-suggestion.is-error {
+  background: #401a1e;
+  border-color: #6a3038;
+}
+
+.drug-suggestion.is-error .drug-suggestion-label,
+.drug-suggestion.is-error .recommendation-text {
+  color: #ffd6de;
+}
+
+.drug-side-effects {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 12px 14px 4px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.drug-side-effects.is-missing .side-effects-label,
+.drug-card.is-missing .drug-card-ft {
+  display: none;
+}
+
+.drug-side-effects.is-missing .side-effects-text {
+  margin: 12px 14px 14px;
+  color: #e3eaee;
+  font-size: 15px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.side-effects-label {
+  flex-shrink: 0;
+  margin: 0 0 8px;
+  color: #9aaab2;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.side-effects-text {
+  flex-shrink: 0;
+  margin: 0;
+  color: #e3eaee;
+  font-size: 14px;
+  line-height: 1.4;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.side-effects-text.is-fallback,
+.side-effects-text.is-note {
+  color: #7f939c;
+  font-style: italic;
+  font-size: 14px;
+}
+
+.side-effect-chips {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-content: flex-start;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-gutter: stable;
+  scrollbar-color: #2a4550 transparent;
+  scrollbar-width: thin;
+}
+
+/* Each row is one snap target. The scroller height is an exact number of these rows. */
+.side-effect-row {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 6px;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.side-effect-chips::-webkit-scrollbar {
+  width: 8px;
+}
+
+.side-effect-chips::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: #2a4550;
+}
+
+.side-effect-chip {
+  padding: 5px 10px;
+  border: 1px solid #2a3740;
+  border-radius: 8px;
+  background: #171e24;
+  color: #e3eaee;
+  font-size: 14px;
+  line-height: 1.3;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.side-effects-more,
+.recommendation-more {
+  display: flex;
+  align-items: center;
+  width: auto;
+  min-height: 28px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border: 1px solid #2a3740;
+  border-radius: 8px;
+  background: #171e24;
+  color: #e3eaee;
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.3;
   text-align: left;
   cursor: pointer;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: break-word;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.drug-name-btn:hover:not(:disabled) {
-  background: rgba(0, 96, 112, 0.98);
+.side-effects-more:hover,
+.recommendation-more:hover {
+  background: #1d2730;
 }
 
-.drug-name-btn.active {
-  background: rgba(0, 116, 134, 1);
-  box-shadow: 0 0 8px rgba(0, 232, 255, 0.3);
-}
-
-.drug-name-btn.loading {
-  opacity: 0.7;
-  cursor: wait;
-}
-
-.drug-name-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.drug-item:first-child .drug-name-btn {
-  padding-right: 48px;
-}
-
-.drug-side-effects {
-  width: 100%;
-  max-height: 108px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 8px 10px;
-  background: rgba(12, 22, 32, 0.92);
-  border-radius: 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
-}
-
-.drug-side-effects.hidden {
-  display: none;
-}
-
-.drug-side-effects.loading .side-effects-source {
-  display: none;
-}
-
-.side-effects-label,
-.side-effects-source,
-.side-effects-text {
+.drug-card-ft {
+  flex-shrink: 0;
   margin: 0;
+  padding: 10px 14px 12px;
+  color: #62747c;
+  font-size: 11.5px;
+  line-height: 1.3;
+  text-align: right;
 }
 
-.side-effects-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(0, 212, 255, 0.72);
-}
-
-.side-effects-text {
-  margin-top: 3px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #c5d5e4;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.side-effects-source {
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(214, 228, 238, 0.92);
-}
-
-.drug-recommendation {
-  width: fit-content;
-  max-width: 100%;
-  max-height: 200px;
-  overflow-x: hidden;
-  overflow-y: auto;
+.drug-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  overflow: hidden;
   padding: 10px 12px;
-  background: rgba(20, 30, 40, 0.96);
-  border: none;
-  border-radius: 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 232, 255, 0.35) transparent;
+  border: 1px solid #1d2a31;
+  border-radius: 10px;
+  background: #0e1216;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.drug-recommendation::-webkit-scrollbar {
-  width: 4px;
+.drug-row:hover {
+  border-color: #2a4550;
 }
 
-.drug-recommendation::-webkit-scrollbar-thumb {
+.drug-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #e3eaee;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drug-row-tags {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.drug-tag {
+  padding: 2px 8px;
+  border: 1px solid #2a3740;
   border-radius: 999px;
-  background: rgba(0, 168, 216, 0.5);
+  color: #9fb7c1;
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
-.drug-recommendation.hidden {
-  display: none;
+.drug-tag.is-suggestion {
+  padding: 1px 6px;
+  border-color: #1f5b66;
+  background: #0f2a31;
+  color: #5fe3f5;
+  font-size: 13px;
+  line-height: 1.2;
 }
 
-.drug-recommendation .recommendation-text {
+.drug-tag.is-pending {
+  border-color: #2a3740;
+  background: transparent;
+  color: #9fb7c1;
+}
+
+.drug-row-chev {
+  flex-shrink: 0;
+  color: #7f939c;
   font-size: 14px;
-  line-height: 1.6;
-  overflow-wrap: break-word;
-}
-
-.drug-recommendation.error {
-  background: rgba(64, 26, 30, 0.95);
-}
-
-.drug-recommendation.error .recommendation-text {
-  color: rgba(255, 180, 190, 0.95);
+  line-height: 1;
 }
 
 .manual-entry-row {
+  flex-shrink: 0;
   width: 100%;
   margin-top: 4px;
 }
@@ -364,12 +631,22 @@ body {
 
 .recommendation-text {
   margin: 0;
-  padding-right: 2px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #d0e0f0;
+  padding: 0;
+  height: calc(1.4em * 2);
+  overflow: hidden;
+  color: #e8f4f6;
+  font-size: 15px;
+  line-height: 1.4;
+  overflow-wrap: break-word;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.drug-suggestion.is-expanded .recommendation-text,
+.drug-suggestion.is-error .recommendation-text {
+  height: auto;
+  min-height: calc(1.4em * 2);
+  overflow: visible;
 }
 
 .panel-footer {
@@ -465,6 +742,8 @@ body {
   gap: 0;
   width: 250px;
   flex-shrink: 0;
+  /* The thinking scale (1.1) paints above the orb box. Padding keeps that ring inside the window. */
+  padding-top: 12px;
 }
 
 .orb-dock.has-update-note {
@@ -482,7 +761,7 @@ body {
 
 .orb-glass-plate {
   position: absolute;
-  top: -4px;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
   width: 214px;
@@ -686,7 +965,7 @@ body {
 
 /* ── Orb (scaled via --orb-size; design coords were 200px) ── */
 .orb {
-  --orb-size: 160px;
+  --orb-size: 144px;
   width: var(--orb-size);
   height: var(--orb-size);
   cursor: grab;
@@ -1309,10 +1588,10 @@ body {
   inset: 0;
   z-index: 220;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px;
-  background: rgba(4, 10, 18, 0.88);
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  background: rgba(4, 10, 18, 0.96);
   backdrop-filter: blur(8px);
 }
 
@@ -1321,38 +1600,72 @@ body {
 }
 
 .login-panel {
-  width: 276px;
+  width: 100%;
+  min-height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 14px 14px 12px;
+  align-items: stretch;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
   border-radius: 12px;
   border: 1px solid rgba(0, 232, 255, 0.35);
   background: rgba(8, 14, 24, 0.94);
   box-shadow: 0 0 24px rgba(0, 232, 255, 0.15);
 }
 
+.login-mark {
+  display: flex;
+  justify-content: center;
+  margin: 0 auto 12px;
+}
+
+.login-orb {
+  --orb-size: 48px;
+  width: 48px;
+  height: 48px;
+  cursor: default;
+}
+
+.login-orb:active {
+  cursor: default;
+}
+
 .login-title {
   margin: 0 0 4px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  line-height: 1.25;
   color: #00e8ff;
   text-align: center;
 }
 
 .login-desc {
-  margin: 0 0 10px;
-  min-height: 2.8em;
+  margin: 0 0 16px;
   font-size: 12px;
   line-height: 1.4;
   color: #c8d8f0;
   text-align: center;
 }
 
+.login-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
 .login-label {
   display: block;
-  margin: 0 0 3px;
+  margin: 0;
   font-size: 10px;
   font-weight: 650;
   letter-spacing: 0.03em;
@@ -1362,8 +1675,8 @@ body {
 .login-input {
   width: 100%;
   box-sizing: border-box;
-  margin-bottom: 8px;
-  padding: 7px 10px;
+  margin: 0;
+  padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid rgba(0, 232, 255, 0.28);
   background: rgba(0, 0, 0, 0.35);
@@ -1385,12 +1698,53 @@ body {
 
 .login-password-row {
   position: relative;
-  margin-bottom: 8px;
+  margin: 0;
 }
 
 .login-password-row .login-input {
-  margin-bottom: 0;
+  margin: 0;
   padding-right: 34px;
+}
+
+.login-forgot {
+  align-self: flex-start;
+  margin: 2px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgba(0, 232, 255, 0.85);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.login-forgot:hover {
+  color: #00f0ff;
+}
+
+.login-forgot-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #8fb8c6;
+  text-align: left;
+}
+
+.login-forgot-note.hidden {
+  display: none;
+}
+
+.login-forgot-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  margin-top: 1px;
 }
 
 .login-eye {
@@ -1427,27 +1781,35 @@ body {
   display: block;
 }
 
+.login-submit-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
 .login-error {
-  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
   box-sizing: border-box;
-  /* Four lines cover the inactive and unassigned messages. The slot stays this tall when empty. */
-  height: calc(1.35em * 4);
-  margin: 4px 0 6px;
-  overflow: hidden;
+  margin: 0;
   font-size: 12px;
   line-height: 1.35;
   color: #ff8ea0;
-  text-align: center;
-  visibility: hidden;
+  text-align: left;
+}
+
+.login-error-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  margin-top: 1px;
 }
 
 .login-error.hidden {
-  display: block;
-  visibility: hidden;
-}
-
-.login-error:not(.hidden) {
-  visibility: visible;
+  display: none;
 }
 
 .login-btn {
@@ -1471,18 +1833,34 @@ body {
   cursor: wait;
 }
 
-body.preview-stage {
-  background: #061018;
+html.preview-login,
+html.preview-login body {
+  width: 380px;
+  height: 460px;
+  min-width: 380px;
+  min-height: 460px;
+  overflow: hidden;
 }
 
-body.preview-stage .app-root {
-  justify-content: flex-end;
+html.preview-login .login-overlay {
+  inset: 0 auto auto 0;
+  width: 380px;
+  height: 460px;
+}
+
+body.preview-stage {
+  background: #2b2f36;
 }
 
 body.preview-stage *,
 body.preview-stage *::before,
 body.preview-stage *::after {
   animation-play-state: paused !important;
+}
+
+body.preview-stage .orb.state-thinking .radar-host {
+  animation: none;
+  transform: scale(1.1);
 }
 
 .update-note {

@@ -5,6 +5,7 @@ mod catalog_cache;
 mod commercial_registry;
 mod env_config;
 mod eprescription;
+mod farmako_spc;
 mod galinos;
 mod pharmacy_config;
 mod problem_report;
@@ -36,8 +37,13 @@ async fn get_recommendation(
 }
 
 #[tauri::command]
-async fn fetch_side_effects(barcode: String, product_name: Option<String>) -> SideEffectsDto {
-    side_effects::fetch_side_effects(&barcode, product_name.as_deref()).await
+async fn fetch_side_effects(
+    barcode: String,
+    product_name: Option<String>,
+    name_only: Option<bool>,
+) -> SideEffectsDto {
+    side_effects::fetch_side_effects(&barcode, product_name.as_deref(), name_only.unwrap_or(false))
+        .await
 }
 
 #[tauri::command]
@@ -87,6 +93,12 @@ async fn submit_problem_report(
 ) -> problem_report::ProblemReportResponse {
     let version = app.package_info().version.to_string();
     problem_report::submit(message, &version).await
+}
+
+#[tauri::command]
+fn client_log(message: String) {
+    let clipped: String = message.chars().take(500).collect();
+    env_config::app_log(&format!("[UI] {clipped}"));
 }
 
 #[tauri::command]
@@ -169,6 +181,7 @@ pub fn run() {
             login,
             logout,
             submit_problem_report,
+            client_log,
             get_update_notice
         ])
         .run(tauri::generate_context!())
