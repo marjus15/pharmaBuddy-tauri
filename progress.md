@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-11-05 — Side-effect chips show as soon as the scanned card opens
+
+- A scan paints the card while the sidebar is still `display: none`. The chip fit measured every row as 0px, wrote `max-height: 0`, and packed every effect into one row. After the panel opened, that lock stayed, so «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» had an empty gap. Clicking «💡 πρόταση» rendered again with the panel visible, which is why the chips appeared only then.
+- The fit now leaves the height alone when the rows cannot be measured. Opening the sidebar measures them for real and snaps to whole rows. A catalog excerpt that already has chips is still shown without waiting for the recommendation.
+- With two or more products, the open list still gives up height so the collapsed row fits, and the clip still lands on a row edge.
+
 ## 2026-11-05 — Chip rows stay whole when another product is in the basket
 
 - With two or more products, the open chip list gives up height so the collapsed row underneath still fits in the window. A single product keeps the previous cap.

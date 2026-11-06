@@ -15,9 +15,11 @@ import {
   basketSuggestionKind,
   cardMetaLine,
   cardFacts,
+  chipFitWindowHeight,
   chipListMaxHeight,
   chipRowsHeight,
   chipRowsThatFit,
+  chipScrollerLock,
   chipViewportHeight,
   chooseExpandedId,
   clampWindowToWorkArea,
@@ -464,6 +466,53 @@ test("the newest scan is inserted first and stays the latest card", () => {
   assert.match(main, /is-latest/);
   assert.match(main, /className = "drug-collapsed"/);
   assert.match(main, /new ResizeObserver/);
+});
+
+test("a hidden measure does not lock the chip list to 0", () => {
+  assert.equal(chipScrollerLock([0, 0, 0], 6, 220), null);
+  assert.equal(chipScrollerLock([], 6, 72), null);
+  assert.equal(chipScrollerLock([0], 6, Number.POSITIVE_INFINITY), null);
+
+  const partial = chipScrollerLock([32, 32, 32, 32], 6, 80);
+  assert.equal(partial.height, 70);
+  assert.equal(partial.maxHeight, 70);
+
+  const full = chipScrollerLock([32, 32], 6, 220);
+  assert.equal(full.height, null);
+  assert.equal(full.maxHeight, 70);
+
+  assert.equal(chipFitWindowHeight(288, 800, 288), 800);
+  assert.equal(chipFitWindowHeight(324, 800, 288), 800);
+  assert.equal(chipFitWindowHeight(640, 800, 288), 640);
+  assert.equal(chipFitWindowHeight(400, 400, 288), 400);
+  assert.equal(chipFitWindowHeight(0, 800, 288), 800);
+
+  const excerpt = "Συχνές: Σακχαρώδης διαβήτης, Κεφαλαλγία, Ζάλη, Δυσκοιλιότητα, Ναυτία.";
+  assert.equal(excerptNeedsRicherSource(excerpt), false);
+  const facts = cardFacts({
+    id: "zircos",
+    barcode: "2803151602011",
+    productName: "ZIRCOS F.C.TAB",
+    recommendation: null,
+    sideEffects: excerpt,
+  });
+  assert.equal(facts.recommendation, null);
+  assert.equal(facts.chips.includes("Σακχαρώδης διαβήτης"), true);
+  assert.equal(facts.chips.includes("Ναυτία"), true);
+
+  const main = readFileSync("src/main.js", "utf8");
+  assert.match(main, /chipScrollerLock\(/);
+  assert.match(main, /chipListCanMeasure\(/);
+  assert.match(main, /releaseChipLock\(/);
+  const open = main.slice(
+    main.indexOf("async function openSidebar"),
+    main.indexOf("async function collapseSidebar"),
+  );
+  const shown = open.indexOf('classList.remove("hidden")');
+  const fitted = open.indexOf("fitOpenChipList(");
+  assert.ok(shown >= 0 && fitted > shown);
+  assert.match(open, /chipFitWindowHeight\(/);
+  assert.match(main, /if \(drug\.sideEffects && !excerptNeedsRicherSource\(drug\.sideEffects\)\)/);
 });
 
 test("chip rows stay whole and shrink when a collapsed product needs the screen", () => {
