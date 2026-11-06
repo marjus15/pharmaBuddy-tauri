@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-11-06 — Prepare production release 0.3.0
+
+- Release branch fast-forwards `master` (`0e639fa`, v0.2.0) to current `uat` (`be5bebf`, PRs #7–#18). Nothing is merged to `master`, and no release tag is created.
+- Version `0.3.0` is set in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` (the `pharmabuddy-tauri` package only), `package.json`, and `package-lock.json`. The release workflow still reads the version from `tauri.conf.json` and would tag `v0.3.0` only after a merge to `master`.
+- Supabase `cache-catalog-entry` (v7) and `get-ai-recommendation` (v44) are already deployed. This change does not deploy them again.
+
 ## 2026-11-05 — Side-effect chips show as soon as the scanned card opens
 
 - A scan paints the card while the sidebar is still `display: none`. The chip fit measured every row as 0px, wrote `max-height: 0`, and packed every effect into one row. After the panel opened, that lock stayed, so «ΣΥΧΝΕΣ ΠΑΡΕΝΕΡΓΕΙΕΣ» had an empty gap. Clicking «💡 πρόταση» rendered again with the panel visible, which is why the chips appeared only then.
